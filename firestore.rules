@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function: check user role
+    // Accepts either a UID-keyed user doc or an email-keyed user doc (fallback).
+    function hasRole(role) {
+      let uid = request.auth.uid;
+      let emailKey = request.auth.token.email;
+      let docByUid = get(/databases/$(database)/documents/users/$(uid));
+      let docByEmail = emailKey != null ? get(/databases/$(database)/documents/users/$(emailKey)) : null;
+      return (docByUid.exists() && docByUid.data.role == role) ||
+             (docByEmail != null && docByEmail.exists() && docByEmail.data.role == role);
+    }
+
+    // ============================================================
+    // ARRIVAL REPORTS
+    // POS devices write, dispatcher reads
+    // ============================================================
+    match /arrivalReports/{reportId} {
+      // POS devices can create arrival reports
+      // Allow if the user has the 'pos' role OR is an authenticated test account in example.com
+      allow create: if request.auth != null && (
+        hasRole('pos') ||
+        (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$'))
+      );
+      
+      // Both POS and dispatcher can read arrival reports
+      allow read: if request.auth != null;
+      
+      // Only POS can update (for corrections)
+      allow update: if request.auth != null && (
+        hasRole('pos') ||
+        (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$'))
+      );
+    }
+
+    // ============================================================
+    // BOOKINGS
+    // Only user can manage their own bookings
+    // ============================================================
+    match /bookings/{bookingId} {
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // ============================================================
+    // USERS (Role Definitions)
+    // Store user role information for access control
+    // ============================================================
+    match /users/{userId} {
+      // Allow read if:
+      // 1. User reads their own UID-keyed doc, OR
+      // 2. User reads their own email-keyed doc (for device/POS auth where email is the doc ID)
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        request.auth.token.email == userId
+      );
+      // Allow write only to own UID-keyed or email-keyed doc
+      allow write: if request.auth != null && (
+        request.auth.uid == userId ||
+        request.auth.token.email == userId
+      );
+    }
+
+    // ============================================================
+    // SCHEDULES (Dispatch System - Option 3: Role-Based)
+    // Dispatcher creates/reads, POS reads and updates dispatch fields
+    // ============================================================
+    match /schedules/{tripId} {
+      
+      // Dispatcher can create new schedules
+      allow create: if request.auth != null && hasRole('dispatcher');
+      
+      // Both dispatcher and POS can read schedules
+      allow read: if request.auth != null;
+      
+      // Dispatcher can update any field
+      allow update: if request.auth != null && hasRole('dispatcher');
+      
+      // POS devices can update status and dispatchTime fields only
+      allow update: if request.auth != null && (
+        hasRole('pos') ||
+        (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$'))
+      ) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'dispatchTime']);
+      
+      // POS can update dispatch fields (driver name, conductor name, dispatch time, status)
+      // Allow any @example.com email user to update schedules
+      allow update: if request.auth != null && (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$')) && exists(/databases/$(database)/documents/schedules/$(tripId));
+    }
+      // Both dispatcher and POS can read schedules
+      allow read: if request.auth != null;
+      
+      // Update: Dispatcher can update any field; POS can update dispatch fields
+      allow update: if request.auth != null && (
+        hasRole('dispatcher') ||
+        ((request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$')) && exists(/databases/$(database)/documents/schedules/$(tripId)))
+      );
+    // ============================================================
+    // TRIP DETAILS (POS uploads trip summary when dispatching)
+    // POS devices create tripDetails docs containing minimal trip metadata
+    // ============================================================
+    match /tripDetails/{detailId} {
+      // POS devices may create tripDetails (TEMPORARY: allow if email is @example.com)
+      allow create: if request.auth != null && 
+        (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$'));
+
+      // Authenticated users may read trip details
+      allow read: if request.auth != null;
+
+      // No updates/deletes from POS by default (dispatcher controls corrections)
+      allow update, delete: if false;
+    }
+  }
+}

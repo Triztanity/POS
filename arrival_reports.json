@@ -1,0 +1,78 @@
+[
+  {
+    "id": "TRIP-2026-01-09T180435",
+    "reportedAt": "2026-01-09T18:24:57.146639",
+    "summary": {
+      "totalPassengers": 2,
+      "totalAmount": 61,
+      "inspectionsCount": 0,
+      "totalCashSales": 25,
+      "totalTickets": 2,
+      "bookingCount": 1,
+      "walkInCount": 1,
+      "totalBookingSales": 36
+    },
+    "manualMode": false,
+    "inspections": [],
+    "tripId": "TRIP-2026-01-09T180435",
+    "walkins": [
+      {
+        "date": "2026-01-09",
+        "passengerName": "Walk-in Passenger",
+        "walkinId": "W001",
+        "passengers": 1,
+        "amount": 25,
+        "tripId": "TRIP-2026-01-09T180435",
+        "source": "walkin",
+        "toLocation": "BALAYONG",
+        "createdAt": 1767953092879,
+        "route": "DIVERSION - BALAYONG",
+        "passengerType": "REGULAR",
+        "time": "18:04",
+        "fromLocation": "DIVERSION",
+        "syncStatus": "pending"
+      }
+    ],
+    "conductor": {
+      "name": "Juan Dela Cruz"
+    },
+    "busNumber": "BUS-001",
+    "vehicleNo": "BUS-001",
+    "createdAt": {
+      "_seconds": 1767954299,
+      "_nanoseconds": 283000000
+    },
+    "driver": {
+      "name": "Ricardo Dalisay"
+    },
+    "bookings": [
+      {
+        "date": "2026-01-09",
+        "passengerName": "",
+        "passengers": 1,
+        "amount": 36,
+        "tripId": "TRIP-2026-01-09T180435",
+        "toLocation": "6. BILARAN",
+        "bookingId": "B001",
+        "passengerUid": "PDEzYWXUIJbDEntTV0I7X3vzU4F2",
+        "createdAt": 1767953110066,
+        "route": "South → North",
+        "passengerType": "REGULAR",
+        "time": "18:05",
+        "fromLocation": "17. Balayan Waltermart",
+        "syncStatus": "pending",
+        "status": "on-board"
+      }
+    ],
+    "dispatcher": {
+      "name": "John Earl"
+    },
+    "androidId": "e48d8154b4dc3378",
+    "tripSession": "south_to_north",
+    "route": "South",
+    "syncedAt": {
+      "_seconds": 1767954303,
+      "_nanoseconds": 427000000
+    }
+  }
+]

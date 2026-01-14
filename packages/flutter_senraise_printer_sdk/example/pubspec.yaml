@@ -1,0 +1,37 @@
+name: senraise_printer_example
+description: Demonstrates how to use the senraise_printer plugin.
+
+# Supported Flutter/Dart versions
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: ">=3.29.3"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ⚠️ Printer Package (already configured)
+  senraise_printer:
+    path: ../
+
+  cupertino_icons: ^1.0.2
+
+  # ================================
+  # 🔥 Offline Login + NFC Support 🔥
+  # ================================
+
+  flutter_nfc_kit: ^3.3.0       # Read employee NFC card to login
+  hive: ^2.2.3                  # Local database storage (offline)
+  hive_flutter: ^1.1.0          # Required Hive initialization
+  path_provider: ^2.1.0         # Needed to store Hive DB on device
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - images/test.png
