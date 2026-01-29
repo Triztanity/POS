@@ -3,6 +3,12 @@
     <!-- CAMERA PERMISSION (required for QR scanning) -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- BLUETOOTH PERMISSIONS (required for ESP32 communication) -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <!-- Let the device know the app USES a camera -->
     <uses-feature
         android:name="android.hardware.camera.any"

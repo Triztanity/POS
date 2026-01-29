@@ -28,7 +28,7 @@ class LocalStorage {
     } catch (e) {
       debugPrint('[LocalStorage] Hive.initFlutter already initialized: $e');
     }
-    
+
     // Open boxes only if not already open
     if (!Hive.isBoxOpen(_boxName)) {
       try {
@@ -40,7 +40,7 @@ class LocalStorage {
     } else {
       debugPrint('[LocalStorage] Box $_boxName already open');
     }
-    
+
     if (!Hive.isBoxOpen(_bookingsBox)) {
       try {
         await Hive.openBox<List>(_bookingsBox);
@@ -51,7 +51,7 @@ class LocalStorage {
     } else {
       debugPrint('[LocalStorage] Box $_bookingsBox already open');
     }
-    
+
     if (!Hive.isBoxOpen(_sessionBox)) {
       try {
         await Hive.openBox<Map>(_sessionBox);
@@ -62,7 +62,7 @@ class LocalStorage {
     } else {
       debugPrint('[LocalStorage] Box $_sessionBox already open');
     }
-    
+
     if (!Hive.isBoxOpen(_inspectionsBox)) {
       try {
         await Hive.openBox<List>(_inspectionsBox);
@@ -73,7 +73,7 @@ class LocalStorage {
     } else {
       debugPrint('[LocalStorage] Box $_inspectionsBox already open');
     }
-    
+
     if (!Hive.isBoxOpen(_scannedTicketsBox)) {
       try {
         await Hive.openBox<List>(_scannedTicketsBox);
@@ -116,7 +116,8 @@ class LocalStorage {
           if (existing == null) {
             final val = box.get(k);
             if (val != null) {
-              final migrated = Map<String, dynamic>.from(val.cast<String, dynamic>());
+              final migrated =
+                  Map<String, dynamic>.from(val.cast<String, dynamic>());
               migrated['uid'] = norm;
               await box.put(norm, migrated);
             }
@@ -131,23 +132,25 @@ class LocalStorage {
     // Seed known authorized UIDs (admin-provisioned). These are canonicalized
     // and only added if missing. Update names/roles here as needed.
     final seeds = [
-      {'uid': 'EB:4D:45:06', 'name': 'Perky Malabanan', 'role': 'conductor'},
-      {'uid': 'F6:98:28:06', 'name': 'Juan Dela Cruz', 'role': 'conductor'},
-
-      {'uid': 'AB:8F:28:06', 'name': 'Pepsi Paloma', 'role': 'driver'},
-      {'uid': 'DE:8D:25:06', 'name': 'Ricardo Dalisay', 'role': 'driver'},
-
-      {'uid': '94:6D:25:06', 'name': 'John Earl', 'role': 'dispatcher'},
-      {'uid': '7C:5F:25:06', 'name': 'David Dimaguiba', 'role': 'dispatcher'},
-      
-      {'uid': '57:1A:26:06', 'name': 'Inspector Card', 'role': 'inspector'},
+      {'uid': '43:56:3F:06', 'name': 'Perky Malabanan', 'role': 'conductor'},
+      {'uid': '6D:ED:43:06', 'name': 'Juan Dela Cruz', 'role': 'conductor'},
+      {'uid': '4E:22:43:06', 'name': 'Pepsi Paloma', 'role': 'driver'},
+      {'uid': 'EC:D5:41:06', 'name': 'Ricardo Dalisay', 'role': 'driver'},
+      {'uid': '47:29:42:06', 'name': 'John Earl', 'role': 'dispatcher'},
+      {'uid': '69:64:3F:06', 'name': 'David Dimaguiba', 'role': 'dispatcher'},
+      {'uid': '05:91:41:06', 'name': 'Inspector Card', 'role': 'inspector'},
     ];
 
     for (final s in seeds) {
       try {
         final key = _normalizeUid(s['uid'] as String);
         if (box.get(key) == null) {
-          await upsertEmployee({'uid': s['uid'], 'name': s['name'], 'role': s['role'], 'synced': false});
+          await upsertEmployee({
+            'uid': s['uid'],
+            'name': s['name'],
+            'role': s['role'],
+            'synced': false
+          });
         }
       } catch (_) {}
     }
@@ -167,22 +170,27 @@ class LocalStorage {
     // Auto-clear scannedTickets if > 24 hours since last clear
     try {
       final sessionBox = Hive.box(_sessionBox);
-      final lastClearTimeStr = sessionBox.get('lastScannedTicketsClearTime')?.toString();
-      
+      final lastClearTimeStr =
+          sessionBox.get('lastScannedTicketsClearTime')?.toString();
+
       bool shouldClear = true;
       if (lastClearTimeStr != null && lastClearTimeStr.isNotEmpty) {
         final lastClearTime = DateTime.tryParse(lastClearTimeStr);
         if (lastClearTime != null) {
-          final hoursSinceLastClear = DateTime.now().difference(lastClearTime).inHours;
+          final hoursSinceLastClear =
+              DateTime.now().difference(lastClearTime).inHours;
           shouldClear = hoursSinceLastClear >= 24;
-          debugPrint('[LocalStorage] Last scannedTickets clear: $hoursSinceLastClear hours ago');
+          debugPrint(
+              '[LocalStorage] Last scannedTickets clear: $hoursSinceLastClear hours ago');
         }
       }
-      
+
       if (shouldClear) {
         await _clearScannedTicketsInternal();
-        await sessionBox.put('lastScannedTicketsClearTime', DateTime.now().toIso8601String());
-        debugPrint('[LocalStorage] ✅ Cleared scannedTickets (24+ hours since last clear)');
+        await sessionBox.put(
+            'lastScannedTicketsClearTime', DateTime.now().toIso8601String());
+        debugPrint(
+            '[LocalStorage] ✅ Cleared scannedTickets (24+ hours since last clear)');
       }
     } catch (e) {
       debugPrint('[LocalStorage] Error during scannedTickets auto-clear: $e');
@@ -212,9 +220,9 @@ class LocalStorage {
   static List<Map<String, dynamic>> getAllEmployees() {
     final box = Hive.box<Map>(_boxName);
     return box.values
-      .cast<Map>()
-      .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
-      .toList();
+        .cast<Map>()
+        .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+        .toList();
   }
 
   static Future<void> deleteEmployee(String uid) async {
@@ -236,7 +244,8 @@ class LocalStorage {
       final bookings = box.get(key) ?? [];
       final record = Map<String, dynamic>.from(booking);
       record['tripId'] = tripId;
-      record['createdAt'] = record['createdAt'] ?? DateTime.now().millisecondsSinceEpoch;
+      record['createdAt'] =
+          record['createdAt'] ?? DateTime.now().millisecondsSinceEpoch;
       record['syncStatus'] = record['syncStatus'] ?? 'pending';
       bookings.add(record);
       await box.put(key, bookings);
@@ -244,19 +253,23 @@ class LocalStorage {
   }
 
   /// Bookings persistence per conductor UID
-  static Future<void> saveBookingsForConductor(String conductorUid, List<Map<String, dynamic>> bookings) async {
+  static Future<void> saveBookingsForConductor(
+      String conductorUid, List<Map<String, dynamic>> bookings) async {
     try {
       final box = Hive.box<List>(_bookingsBox);
       await box.put(conductorUid, bookings);
     } catch (_) {}
   }
 
-  static List<Map<String, dynamic>>? loadBookingsForConductor(String conductorUid) {
+  static List<Map<String, dynamic>>? loadBookingsForConductor(
+      String conductorUid) {
     try {
       final box = Hive.box<List>(_bookingsBox);
       final raw = box.get(conductorUid);
       if (raw == null) return null;
-      return (raw.cast<Map>()).map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>())).toList();
+      return (raw.cast<Map>())
+          .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+          .toList();
     } catch (_) {
       return null;
     }
@@ -282,11 +295,13 @@ class LocalStorage {
   }
 
   /// Session helpers
-  static Future<void> saveCurrentConductor(Map<String, dynamic> conductor) async {
+  static Future<void> saveCurrentConductor(
+      Map<String, dynamic> conductor) async {
     try {
       final box = Hive.box<Map>(_sessionBox);
       await box.put('conductor', conductor);
-      debugPrint('[LocalStorage] Saved conductor: ${conductor['name']} (uid: ${conductor['uid']})');
+      debugPrint(
+          '[LocalStorage] Saved conductor: ${conductor['name']} (uid: ${conductor['uid']})');
     } catch (e) {
       debugPrint('[LocalStorage] ERROR saving conductor: $e');
     }
@@ -301,7 +316,8 @@ class LocalStorage {
         return null;
       }
       final result = Map<String, dynamic>.from(raw.cast<String, dynamic>());
-      debugPrint('[LocalStorage] Loaded conductor: ${result['name']} (uid: ${result['uid']})');
+      debugPrint(
+          '[LocalStorage] Loaded conductor: ${result['name']} (uid: ${result['uid']})');
       return result;
     } catch (e) {
       debugPrint('[LocalStorage] ERROR loading conductor: $e');
@@ -336,7 +352,8 @@ class LocalStorage {
 
   /// Navigation state persistence (for resuming from recent apps)
   /// Saves the last screen the user was on
-  static Future<void> saveLastScreen(String screenName, Map<String, dynamic> params) async {
+  static Future<void> saveLastScreen(
+      String screenName, Map<String, dynamic> params) async {
     try {
       final box = Hive.box<Map>(_sessionBox);
       await box.put('lastScreen', {'name': screenName, 'params': params});
@@ -361,7 +378,9 @@ class LocalStorage {
       final box = Hive.box<Map>(_sessionBox);
       await box.delete('lastScreen');
     } catch (_) {}
-  }  static Future<void> clearCurrentConductor() async {
+  }
+
+  static Future<void> clearCurrentConductor() async {
     try {
       final box = Hive.box<Map>(_sessionBox);
       await box.delete('conductor');
@@ -375,7 +394,8 @@ class LocalStorage {
       final inspections = box.get('all') ?? [];
       final record = Map<String, dynamic>.from(inspection);
       record['tripId'] = record['tripId'] ?? getCurrentTripId();
-      record['createdAt'] = record['createdAt'] ?? DateTime.now().millisecondsSinceEpoch;
+      record['createdAt'] =
+          record['createdAt'] ?? DateTime.now().millisecondsSinceEpoch;
       record['syncStatus'] = record['syncStatus'] ?? 'pending';
       inspections.add(record);
       await box.put('all', inspections);
@@ -386,7 +406,10 @@ class LocalStorage {
     try {
       final box = Hive.box<List>(_inspectionsBox);
       final inspections = box.get('all') ?? [];
-      return inspections.cast<Map>().map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>())).toList();
+      return inspections
+          .cast<Map>()
+          .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -395,13 +418,16 @@ class LocalStorage {
   static List<Map<String, dynamic>> loadInspectionsForTrip(String tripId) {
     try {
       final all = loadInspections();
-      return all.where((i) => (i['tripId']?.toString() ?? '') == tripId).toList();
+      return all
+          .where((i) => (i['tripId']?.toString() ?? '') == tripId)
+          .toList();
     } catch (_) {
       return [];
     }
   }
 
-  static Future<void> updateInspection(String id, Map<String, dynamic> inspection) async {
+  static Future<void> updateInspection(
+      String id, Map<String, dynamic> inspection) async {
     try {
       final box = Hive.box<List>(_inspectionsBox);
       final inspections = box.get('all') ?? [];
@@ -423,7 +449,8 @@ class LocalStorage {
       final tickets = box.get('all') ?? [];
       final record = Map<String, dynamic>.from(ticket);
       record['tripId'] = record['tripId'] ?? getCurrentTripId();
-      record['createdAt'] = record['createdAt'] ?? DateTime.now().millisecondsSinceEpoch;
+      record['createdAt'] =
+          record['createdAt'] ?? DateTime.now().millisecondsSinceEpoch;
       record['syncStatus'] = record['syncStatus'] ?? 'pending';
       tickets.add(record);
       await box.put('all', tickets);
@@ -434,7 +461,10 @@ class LocalStorage {
     try {
       final box = Hive.box<List>(_scannedTicketsBox);
       final tickets = box.get('all') ?? [];
-      return tickets.cast<Map>().map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>())).toList();
+      return tickets
+          .cast<Map>()
+          .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -443,7 +473,9 @@ class LocalStorage {
   static List<Map<String, dynamic>> loadScannedTicketsForTrip(String tripId) {
     try {
       final all = loadScannedTickets();
-      return all.where((s) => (s['tripId']?.toString() ?? '') == tripId).toList();
+      return all
+          .where((s) => (s['tripId']?.toString() ?? '') == tripId)
+          .toList();
     } catch (_) {
       return [];
     }
@@ -474,7 +506,8 @@ class LocalStorage {
       // Ensure trip scoping and metadata
       final record = Map<String, dynamic>.from(walkin);
       record['tripId'] = record['tripId'] ?? getCurrentTripId();
-      record['createdAt'] = record['createdAt'] ?? DateTime.now().millisecondsSinceEpoch;
+      record['createdAt'] =
+          record['createdAt'] ?? DateTime.now().millisecondsSinceEpoch;
       record['syncStatus'] = record['syncStatus'] ?? 'pending';
       items.add(record);
       await box.put('all', items);
@@ -485,7 +518,10 @@ class LocalStorage {
     try {
       final box = Hive.box<List>(_walkinsBox);
       final items = box.get('all') ?? [];
-      return items.cast<Map>().map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>())).toList();
+      return items
+          .cast<Map>()
+          .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -494,7 +530,9 @@ class LocalStorage {
   static List<Map<String, dynamic>> loadWalkinsForTrip(String tripId) {
     try {
       final all = loadWalkins();
-      return all.where((w) => (w['tripId']?.toString() ?? '') == tripId).toList();
+      return all
+          .where((w) => (w['tripId']?.toString() ?? '') == tripId)
+          .toList();
     } catch (_) {
       return [];
     }
@@ -512,10 +550,13 @@ class LocalStorage {
     try {
       final box = Hive.box<Map>(_sessionBox);
       final session = box.get('sessionData');
-      if (session != null && session['currentTripId'] != null) return session['currentTripId'].toString();
+      if (session != null && session['currentTripId'] != null)
+        return session['currentTripId'].toString();
       // Generate a default trip id if missing
-      final id = 'TRIP-${DateTime.now().toIso8601String().replaceAll(':', '').split('.').first}';
-      final newSession = Map<String, dynamic>.from(session?.cast<String, dynamic>() ?? {});
+      final id =
+          'TRIP-${DateTime.now().toIso8601String().replaceAll(':', '').split('.').first}';
+      final newSession =
+          Map<String, dynamic>.from(session?.cast<String, dynamic>() ?? {});
       newSession['currentTripId'] = id;
       box.put('sessionData', newSession as Map);
       return id;
@@ -528,14 +569,16 @@ class LocalStorage {
     try {
       final box = Hive.box<Map>(_sessionBox);
       final session = box.get('sessionData');
-      final newSession = Map<String, dynamic>.from(session?.cast<String, dynamic>() ?? {});
+      final newSession =
+          Map<String, dynamic>.from(session?.cast<String, dynamic>() ?? {});
       newSession['currentTripId'] = tripId;
       box.put('sessionData', newSession as Map);
     } catch (_) {}
   }
 
   static Future<String> startNewTrip({String? vehicleNo}) async {
-    final newId = 'TRIP-${DateTime.now().toIso8601String().replaceAll(':', '').split('.').first}';
+    final newId =
+        'TRIP-${DateTime.now().toIso8601String().replaceAll(':', '').split('.').first}';
     try {
       final tb = Hive.box<List>(_tripsBox);
       final meta = {
@@ -560,7 +603,10 @@ class LocalStorage {
   static Future<void> finalizeTrip(String tripId) async {
     try {
       final tb = Hive.box<List>(_tripsBox);
-      final all = (tb.get('all') ?? []).cast<Map>().map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>())).toList();
+      final all = (tb.get('all') ?? [])
+          .cast<Map>()
+          .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+          .toList();
       for (var m in all) {
         if ((m['tripId']?.toString() ?? '') == tripId) {
           m['finalized'] = true;
@@ -571,7 +617,10 @@ class LocalStorage {
 
       // Mark walkins of that trip as finalized
       final wbox = Hive.box<List>(_walkinsBox);
-      final walks = (wbox.get('all') ?? []).cast<Map>().map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>())).toList();
+      final walks = (wbox.get('all') ?? [])
+          .cast<Map>()
+          .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+          .toList();
       for (var w in walks) {
         if ((w['tripId']?.toString() ?? '') == tripId) {
           w['finalized'] = true;
@@ -582,7 +631,10 @@ class LocalStorage {
 
       // Mark scanned tickets as finalized for trip
       final sbox = Hive.box<List>(_scannedTicketsBox);
-      final scans = (sbox.get('all') ?? []).cast<Map>().map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>())).toList();
+      final scans = (sbox.get('all') ?? [])
+          .cast<Map>()
+          .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+          .toList();
       for (var s in scans) {
         if ((s['tripId']?.toString() ?? '') == tripId) {
           s['finalized'] = true;
@@ -593,7 +645,10 @@ class LocalStorage {
 
       // Mark inspections as finalized for trip (if trip-scoped)
       final inbox = Hive.box<List>(_inspectionsBox);
-      final inspections = (inbox.get('all') ?? []).cast<Map>().map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>())).toList();
+      final inspections = (inbox.get('all') ?? [])
+          .cast<Map>()
+          .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+          .toList();
       for (var i in inspections) {
         if ((i['tripId']?.toString() ?? '') == tripId) {
           i['finalized'] = true;
@@ -663,7 +718,8 @@ class LocalStorage {
     try {
       final box = Hive.box<Map>(_sessionBox);
       final session = box.get('sessionData');
-      final newSession = Map<String, dynamic>.from(session?.cast<String, dynamic>() ?? {});
+      final newSession =
+          Map<String, dynamic>.from(session?.cast<String, dynamic>() ?? {});
       newSession['vehicleNo'] = vehicleNo;
       await box.put('sessionData', newSession as Map);
     } catch (_) {}
@@ -691,13 +747,15 @@ class LocalStorage {
       // Clear walk-ins for the previous trip(s) - we only keep one active trip's walk-ins
       final wbox = Hive.box<List>(_walkinsBox);
       await wbox.delete('all');
-      
+
       // Clear inspections for the previous trip(s) - same as walk-ins
       final inbox = Hive.box<List>(_inspectionsBox);
       await inbox.delete('all');
-      
-      debugPrint('[LocalStorage] Trip state reset: walk-ins and inspections cleared for new trip $newTripId');
-      debugPrint('[LocalStorage] Bookings and scanned tickets preserved (grouped by tripId)');
+
+      debugPrint(
+          '[LocalStorage] Trip state reset: walk-ins and inspections cleared for new trip $newTripId');
+      debugPrint(
+          '[LocalStorage] Bookings and scanned tickets preserved (grouped by tripId)');
     } catch (e) {
       debugPrint('[LocalStorage] ERROR resetting trip state: $e');
     }
@@ -711,7 +769,7 @@ class LocalStorage {
       final bookings = loadBookingsForTrip(tripId);
       final scannedTickets = loadScannedTicketsForTrip(tripId);
       final inspections = loadInspectionsForTrip(tripId);
-      
+
       return {
         'tripId': tripId,
         'walkins': walkins,
@@ -736,7 +794,10 @@ class LocalStorage {
       final box = Hive.box<List>(_bookingsBox);
       final key = 'trip_$tripId';
       final bookingsForTrip = box.get(key) ?? [];
-      return bookingsForTrip.cast<Map>().map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>())).toList();
+      return bookingsForTrip
+          .cast<Map>()
+          .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+          .toList();
     } catch (_) {
       return [];
     }
@@ -761,7 +822,7 @@ class LocalStorage {
     try {
       final stats = <String, dynamic>{};
       int totalRecords = 0;
-      
+
       // Check each box
       final boxes = [
         (_boxName, 'Employees'),
@@ -772,7 +833,7 @@ class LocalStorage {
         (_walkinsBox, 'Walk-ins'),
         (_tripsBox, 'Trips'),
       ];
-      
+
       for (final (boxKey, boxName) in boxes) {
         try {
           final box = Hive.box(boxKey);
@@ -788,7 +849,7 @@ class LocalStorage {
           stats[boxName] = {'error': e.toString()};
         }
       }
-      
+
       stats['totalRecords'] = totalRecords;
       return stats;
     } catch (e) {
@@ -801,11 +862,11 @@ class LocalStorage {
   static Future<String> getStorageSummary() async {
     final stats = await getStorageStats();
     final buffer = StringBuffer();
-    
+
     buffer.writeln('=== Local Storage Summary ===');
     buffer.writeln('Total Records: ${stats['totalRecords'] ?? 0}');
     buffer.writeln('');
-    
+
     stats.forEach((key, value) {
       if (key != 'totalRecords' && key != 'error' && value is Map) {
         final records = value['records'] ?? 0;
@@ -813,14 +874,11 @@ class LocalStorage {
         buffer.writeln('$key: $records records ${isEmpty ? '(empty)' : ''}');
       }
     });
-    
+
     if (stats.containsKey('error')) {
       buffer.writeln('\nError: ${stats['error']}');
     }
-    
+
     return buffer.toString();
   }
 }
-
-
-

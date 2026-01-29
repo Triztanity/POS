@@ -42,9 +42,12 @@ dependencies:
   cloud_firestore: ^6.1.1
   android_intent_plus: ^4.0.0
   intl: ^0.18.0
-
-  # Bluetooth communication with ESP32
-  flutter_blue_plus: ^1.31.13
+  
+  # Permission handling for runtime permissions
+  permission_handler: ^12.0.1
+  
+  # Persistent storage for device preferences
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:

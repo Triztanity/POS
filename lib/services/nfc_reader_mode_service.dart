@@ -112,6 +112,13 @@ class NFCReaderModeService {
       return;
     }
 
+    // Debug: Show all employees in storage
+    final allEmployees = LocalStorage.getAllEmployees();
+    debugPrint('[NFC-READER-MODE] Total employees in storage: ${allEmployees.length}');
+    for (final emp in allEmployees) {
+      debugPrint('[NFC-READER-MODE] Stored: ${emp['uid']} -> ${emp['name']}');
+    }
+
     final user = LocalStorage.getEmployee(uid);
     if (user != null) {
       final role = user['role'].toString();

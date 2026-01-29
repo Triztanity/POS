@@ -9,8 +9,6 @@ import 'services/nfc_reader_mode_service.dart';
 import 'services/inspector_nfc_handler.dart';
 import 'services/inspection_sync_service.dart';
 import 'services/arrival_report_sync_service.dart';
-import 'services/bluetooth_message_queue_service.dart';
-import 'services/esp32_bluetooth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
@@ -22,9 +20,6 @@ void main() async {
 
   // Initialize local offline storage before app starts
   await LocalStorage.init();
-
-  // Initialize Bluetooth message queue
-  await BluetoothMessageQueueService.initializeQueue();
 
   // Initialize Firebase (required for Firestore uploads of arrival reports)
   try {
@@ -71,8 +66,6 @@ class AfcsApp extends StatefulWidget {
 }
 
 class _AfcsAppState extends State<AfcsApp> {
-  late ESP32BluetoothService _bluetoothService;
-
   @override
   void initState() {
     super.initState();
@@ -85,25 +78,7 @@ class _AfcsAppState extends State<AfcsApp> {
     // Start arrival report background sync service
     ArrivalReportSyncService();
     
-    // Initialize Bluetooth service for ESP32 communication
-    _bluetoothService = ESP32BluetoothService();
-    _initializeBluetoothAsync();
-    
     debugPrint('[MAIN] AfcsApp initState complete');
-  }
-
-  /// Initialize Bluetooth asynchronously to avoid blocking UI
-  void _initializeBluetoothAsync() async {
-    try {
-      final success = await _bluetoothService.initializeBluetoothConnection();
-      if (success) {
-        debugPrint('[MAIN] Bluetooth connection established');
-      } else {
-        debugPrint('[MAIN] Bluetooth connection failed, messages will be queued');
-      }
-    } catch (e) {
-      debugPrint('[MAIN] Error initializing Bluetooth: $e');
-    }
   }
 
   @override
@@ -111,7 +86,6 @@ class _AfcsAppState extends State<AfcsApp> {
     NFCReaderModeService.instance.stop();
     InspectorNFCHandler.instance.dispose();
     InspectionSyncService().dispose();
-    _bluetoothService.dispose();
     super.dispose();
   }
 
