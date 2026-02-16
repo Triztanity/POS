@@ -662,55 +662,23 @@ class LocalStorage {
     } catch (_) {}
   }
 
-  /// Manual ticketing mode helpers (stored in session as a Map with metadata)
+  /// Manual ticketing mode removed: keep no-op APIs to avoid changing callers.
   static Future<void> setManualMode(bool enabled) async {
-    try {
-      final box = Hive.box<Map>(_sessionBox);
-      final modeData = <String, dynamic>{
-        'enabled': enabled,
-        'timestamp': enabled ? DateTime.now().millisecondsSinceEpoch : null,
-        'tripId': enabled ? getCurrentTripId() : null,
-      };
-      await box.put('manualModeState', modeData as Map);
-    } catch (_) {}
+    // intentionally no-op
+    return;
   }
 
   static bool isManualMode() {
-    try {
-      final box = Hive.box<Map>(_sessionBox);
-      final data = box.get('manualModeState');
-      if (data == null) return false;
-      final modeData = Map<String, dynamic>.from(data.cast<String, dynamic>());
-      if (modeData['enabled'] != true) return false;
-      final tripId = modeData['tripId']?.toString();
-      if (tripId == null) return false;
-      return tripId == getCurrentTripId();
-    } catch (_) {
-      return false;
-    }
+    return false;
   }
 
   static int? getManualModeTimestamp() {
-    try {
-      final box = Hive.box<Map>(_sessionBox);
-      final data = box.get('manualModeState');
-      if (data == null) return null;
-      final modeData = Map<String, dynamic>.from(data.cast<String, dynamic>());
-      final tripId = modeData['tripId']?.toString();
-      if (tripId == null || tripId != getCurrentTripId()) return null;
-      final ts = modeData['timestamp'];
-      if (ts == null) return null;
-      return ts is int ? ts : int.tryParse(ts.toString());
-    } catch (_) {
-      return null;
-    }
+    return null;
   }
 
   static Future<void> clearManualMode() async {
-    try {
-      final box = Hive.box<Map>(_sessionBox);
-      await box.delete('manualModeState');
-    } catch (_) {}
+    // intentionally no-op
+    return;
   }
 
   /// Store vehicle number (bus number) for current trip
@@ -736,6 +704,34 @@ class LocalStorage {
       return 'Unknown';
     } catch (_) {
       return 'Unknown';
+    }
+  }
+
+  /// Store selected route information for current trip in session
+  static Future<void> setCurrentRoute(String routeId, String routeName) async {
+    try {
+      final box = Hive.box<Map>(_sessionBox);
+      final session = box.get('sessionData');
+      final newSession =
+          Map<String, dynamic>.from(session?.cast<String, dynamic>() ?? {});
+      newSession['routeId'] = routeId;
+      newSession['routeName'] = routeName;
+      await box.put('sessionData', newSession as Map);
+    } catch (_) {}
+  }
+
+  static Map<String, String>? getCurrentRoute() {
+    try {
+      final box = Hive.box<Map>(_sessionBox);
+      final session = box.get('sessionData');
+      if (session == null) return null;
+      final s = Map<String, dynamic>.from(session.cast<String, dynamic>());
+      final rid = s['routeId']?.toString();
+      final rname = s['routeName']?.toString();
+      if (rid == null || rname == null) return null;
+      return {'routeId': rid, 'routeName': rname};
+    } catch (_) {
+      return null;
     }
   }
 

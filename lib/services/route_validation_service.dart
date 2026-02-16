@@ -31,7 +31,7 @@ class RouteValidationService {
     'Sinisian Elem. School',
     'Mataas na Bayan Brgy. Hall',
     'Mahayahay 7 11',
-    'Matingain Mahal na Poon',
+    'Matingain Mall na Poon',
     'Bukal The Black Tea Project',
     'Tubigan Ice Plant',
     'Malinis Wilcon Depot',

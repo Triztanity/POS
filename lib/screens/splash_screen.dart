@@ -4,6 +4,7 @@ import '../services/app_state.dart';
 import '../models/booking.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
+import 'next_day_dispatch_screen.dart';
 
 /// Splash screen: checks for saved session on app start.
 /// If logged in, navigates to last screen or RouteSelectionScreen.
@@ -59,7 +60,9 @@ class _SplashScreenState extends State<SplashScreen> {
           if (lastScreen != null && lastScreen['name'] == 'home_screen') {
             // Restore to HomeScreen with saved params
             final paramsData = lastScreen['params'] as dynamic;
-            final params = paramsData is Map ? Map<String, dynamic>.from(paramsData) : null;
+            final params = paramsData is Map
+                ? Map<String, dynamic>.from(paramsData)
+                : null;
             debugPrint('[SPLASH] Restoring to HomeScreen with params: $params');
             Navigator.pushReplacement(
               context,
@@ -70,10 +73,19 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
               ),
             );
+          } else if (lastScreen != null &&
+              lastScreen['name'] == 'next_day_dispatch_screen') {
+            debugPrint('[SPLASH] Restoring to NextDayDispatchScreen');
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const NextDayDispatchScreen()),
+            );
           } else {
             // No last screen saved — go directly to HomeScreen with default route
-            debugPrint('[SPLASH] No last screen saved, navigating to HomeScreen with default route');
-            LocalStorage.saveLastScreen('home_screen', {'routeDirection': 'north_to_south'});
+            debugPrint(
+                '[SPLASH] No last screen saved, navigating to HomeScreen with default route');
+            LocalStorage.saveLastScreen(
+                'home_screen', {'routeDirection': 'north_to_south'});
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(

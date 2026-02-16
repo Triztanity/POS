@@ -1,0 +1,80 @@
+%% POS System Flowchart
+%% Generated: 2026-02-09
+flowchart LR
+  subgraph AppStartup[App Startup]
+    A1[Launch App (main.dart)] --> A2[LocalStorage.init (Hive)]
+    A2 --> A3[Firebase.initializeApp (optional)]
+    A3 --> A4[DeviceConfig.autoDetect (assigned bus)]
+    A4 --> A5[NFC Reader Mode & AppState listeners start]
+    A5 --> A6[Background Services: InspectionSync, ArrivalReportSync]
+  end
+
+  subgraph UI[User / Driver UI]
+    U1[Route Selection / Dispatch Screen]
+    U2[QR Scanner Screen]
+    U3[Booking Confirmation / Passenger Type]
+    U4[Bookings Screen / Trip Manager]
+  end
+
+  subgraph Validation[QR & Route Validation]
+    V1[Mobile Scanner reads QR -> QRData]
+    V2[QRValidationService.validateExpiration]
+    V3[QRValidationService.checkDuplicate (Hive scanned_tickets)]
+    V4[QRValidationService.validateBusNumber (DeviceConfig)]
+    V5[QRValidationService.validateRoute (RouteValidator)]
+  end
+
+  subgraph Local[Local Storage & Print]
+    L1[LocalStorage.saveScannedTicket (scanned_tickets box)]
+    L2[LocalStorage.saveBookingForTrip (bookings per trip)]
+    L3[TicketPrinter.printTicket (Senraise Printer)]
+  end
+
+  subgraph Firebase[Firebase (Cloud Firestore + Auth)]
+    F1[FirebaseAuth (device-level via pos_device_auth_service)]
+    F2[bookings collection (trip-scoped)]
+    F3[schedules collection / dispatches]
+    F4[tripDetails collection]
+    F5[arrivalReports collection]
+  end
+
+  subgraph Sync[Sync & Dispatch Services]
+    S1[BookingUpdateService / SyncService (uploads local bookings)]
+    S2[ArrivalReportSyncService (uploads arrival_reports_pending)]
+    S3[FirebaseDispatchService (writes schedules / tripDetails)]
+  end
+
+  %% Flows
+  U2 --> V1
+  V1 --> V2 --> V3 --> V4 --> V5
+  V5 -- valid --> U3
+  U3 -- confirm --> L3
+  L3 -- (printed) --> L1
+  L1 --> L2
+  L2 --> S1
+  S1 -->|if authenticated| F2
+  S1 -->|if not authed| LocalStorage[keep pending sync]
+
+  U1 --> S3
+  S3 -->|ensure auth| F1
+  S3 --> F3
+  S3 --> F4
+
+  ArrivalEvents[Driver taps "Arrived"] --> L2
+  ArrivalEvents --> S2
+  S2 -->|ensure auth| F5
+
+  %% Offline / retry
+  LocalStorage -. periodically -> S1
+  LocalStorage -. periodically -> S2
+  S1 -->|auth via| F1
+  S2 -->|auth via| F1
+
+  %% External devices
+  A5 --> NFC[Native NFC Reader]
+  L3 --> PRN[Senraise Printer]
+  A5 --> ESP[ESP32 GSM Gateway] -->|pushes telemetry / backup uploads| F5
+
+  %% Labels
+  classDef firebase fill:#f8f0ff,stroke:#7b1fa2;color:#3c096c;
+  class F1,F2,F3,F4,F5 firebase;

@@ -5,7 +5,7 @@ import '../services/nfc_reader_mode_service.dart';
 import '../services/app_state.dart';
 import '../models/booking.dart';
 import 'home_screen.dart';
-import 'route_selection_screen.dart';
+// route_selection_screen removed from post-login flow
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -31,13 +31,13 @@ class _LoginScreenState extends State<LoginScreen> {
     _nfcSub = NFCReaderModeService.instance.onTag.listen((user) {
       debugPrint('[LOGIN] NFC tag event received: $user');
       final role = (user['role'] ?? '').toString().toLowerCase();
-      
+
       // Skip inspector card on login screen (handled globally)
       if (role == 'inspector') {
         debugPrint('[LOGIN] inspector card detected, ignoring on login screen');
         return;
       }
-      
+
       if (role == 'conductor') {
         debugPrint('[LOGIN] conductor detected, calling _handleConductorLogin');
         if (!mounted) {
@@ -49,9 +49,11 @@ class _LoginScreenState extends State<LoginScreen> {
         final name = user['name'] ?? 'User';
         final roleDisplay = ((user['role'] ?? '').toString());
         if (roleDisplay.isNotEmpty) {
-          final display = roleDisplay[0].toUpperCase() + roleDisplay.substring(1);
+          final display =
+              roleDisplay[0].toUpperCase() + roleDisplay.substring(1);
           setState(() {
-            _status = 'Tap accepted for $display $name. Only CONDUCTOR can login on this device.';
+            _status =
+                'Tap accepted for $display $name. Only CONDUCTOR can login on this device.';
           });
         }
       }
@@ -81,14 +83,14 @@ class _LoginScreenState extends State<LoginScreen> {
     debugPrint('[LOGIN] _handleConductorLogin called with user: $user');
     final name = user['name'] ?? 'User';
     debugPrint('[LOGIN] name=$name, mounted=$mounted');
-    
+
     // Store conductor in AppState so it persists across navigation
     AppState.instance.setConductor(user);
     AppState.instance.setDriver(null); // Clear any previous driver on new login
-    
+
     // Persist session to storage for app restart recovery
     LocalStorage.saveCurrentConductor(user);
-    
+
     // Load persisted bookings for this conductor (if any)
     try {
       final uid = user['uid']?.toString();
@@ -96,21 +98,33 @@ class _LoginScreenState extends State<LoginScreen> {
         BookingManager().loadForConductor(uid);
       }
     } catch (_) {}
-    
+
     if (!mounted) {
       debugPrint('[LOGIN] widget not mounted, returning');
       return;
     }
-    
+
     try {
-      debugPrint('[LOGIN] attempting Navigator.pushReplacement to RouteSelectionScreen');
-      // Clear any saved last screen so user chooses route
-      LocalStorage.clearLastScreen();
+      debugPrint('[LOGIN] navigating to HomeScreen (no route chooser)');
+      // Prefer persisted route if present, otherwise default to north_to_south
+      final curRoute = LocalStorage.getCurrentRoute();
+      String routeDirection = 'north_to_south';
+      if (curRoute != null) {
+        final rid = curRoute['routeId'];
+        if (rid == 'south_to_north') routeDirection = 'south_to_north';
+      }
+
+      // Persist last screen as home with chosen routeDirection
+      LocalStorage.saveLastScreen(
+          'home_screen', {'routeDirection': routeDirection});
+
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => RouteSelectionScreen(conductor: user)),
+        MaterialPageRoute(
+            builder: (_) =>
+                HomeScreen(routeDirection: routeDirection, conductor: user)),
       );
-      debugPrint('[LOGIN] Navigator.pushReplacement to RouteSelectionScreen succeeded');
+      debugPrint('[LOGIN] Navigator.pushReplacement to HomeScreen succeeded');
     } catch (e) {
       debugPrint('[LOGIN] ERROR during Navigator.pushReplacement: $e');
     }
@@ -127,8 +141,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-
-
   void _loginManual() {
     final input = _nameController.text.trim();
     if (input.isEmpty) {
@@ -142,13 +154,15 @@ class _LoginScreenState extends State<LoginScreen> {
     final employees = LocalStorage.getAllEmployees();
     Map<String, dynamic>? match;
     final inputLower = input.toLowerCase();
-    final inputUidNorm = input.replaceAll(RegExp(r'[^A-Fa-f0-9]'), '').toUpperCase();
+    final inputUidNorm =
+        input.replaceAll(RegExp(r'[^A-Fa-f0-9]'), '').toUpperCase();
 
     for (final e in employees) {
       final name = (e['name'] ?? '').toString();
       final uid = (e['uid'] ?? '').toString();
       final uidNorm = uid.replaceAll(RegExp(r'[^A-Fa-f0-9]'), '').toUpperCase();
-      if (name.toLowerCase() == inputLower || (uidNorm.isNotEmpty && uidNorm == inputUidNorm)) {
+      if (name.toLowerCase() == inputLower ||
+          (uidNorm.isNotEmpty && uidNorm == inputUidNorm)) {
         match = Map<String, dynamic>.from(e);
         break;
       }
@@ -165,7 +179,9 @@ class _LoginScreenState extends State<LoginScreen> {
     final role = (match['role'] ?? '').toString().toLowerCase();
     if (role != 'conductor') {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Tap accepted for ${match['role']} ${match['name']}. Only CONDUCTOR can login on this device.')),
+        SnackBar(
+            content: Text(
+                'Tap accepted for ${match['role']} ${match['name']}. Only CONDUCTOR can login on this device.')),
       );
       return;
     }
@@ -173,20 +189,23 @@ class _LoginScreenState extends State<LoginScreen> {
     // Successful manual login
     AppState.instance.setConductor(match);
     AppState.instance.setDriver(null);
-    
+
     // Persist session to storage for app restart recovery
     LocalStorage.saveCurrentConductor(match);
-    
+
     try {
       final uid = match['uid']?.toString();
       if (uid != null && uid.isNotEmpty) BookingManager().loadForConductor(uid);
     } catch (_) {}
-    
+
     // Save default route and navigate directly to HomeScreen
-    LocalStorage.saveLastScreen('home_screen', {'routeDirection': 'north_to_south'});
+    LocalStorage.saveLastScreen(
+        'home_screen', {'routeDirection': 'north_to_south'});
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => HomeScreen(routeDirection: 'north_to_south', conductor: match)),
+      MaterialPageRoute(
+          builder: (_) =>
+              HomeScreen(routeDirection: 'north_to_south', conductor: match)),
     );
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -194,8 +213,6 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     }
   }
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -234,7 +251,8 @@ class _LoginScreenState extends State<LoginScreen> {
               // NFC status
               Text(
                 _status,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
 
@@ -258,7 +276,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _loginManual,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green[700],
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
                     ),
                     child: const Text("Login"),
                   ),

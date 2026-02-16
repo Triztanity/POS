@@ -44,7 +44,7 @@ class BookingStationMapping {
     'SINISIAN': 'SINISIAN ELEM SCHOOL',
     'MATAAS NA BAYAN': 'MATAAS NA BAYAN BRGY. HALL',
     'MAHAYAHAY': 'MAHAYAHAY 7 11',
-    'MATINGAIN': 'MATINGAIN MAHAL NA POON',
+    'MATINGAIN': 'MATINGAIN MALL NA POON',
     
     // Stations 31-35
     'BUKAL': 'BUKAL THE BLACK TEA PROJECT',
@@ -56,6 +56,7 @@ class BookingStationMapping {
     // Stations 36-40
     'HALANG': 'HALANG FLYING V',
     'LATAG': 'LATAG WAITING SHED',
+    'TULO': 'TULO WAITING SHED',
     'JOLLIBEE TAAL': 'JOLLIBEE TAAL',
     'BULI': 'BULI BRGY. HALL',
     
@@ -65,6 +66,15 @@ class BookingStationMapping {
     'STA. TERESITA': 'STA. TERESITA CHURCH',
     'SAN LUIS': 'SAN LUIS INTERSECTION',
     'MUZON': 'MUZON',
+    'CUPANG': 'CUPANG WAITING SHED/ SCHOOL',
+    'AS-IS': 'AS-IS BRGY. HALL',
+    'AS IS': 'AS-IS BRGY. HALL',
+    'BALAYONG': 'BALAYONG CLEAN FUEL',
+    'MANGHINAO': 'MANGHINAO',
+    'BAUAN': 'CITIMART BAUAN',
+    'DIVERSION': 'DIVERSION NTC',
+    'STA RITA': 'STA. RITA BRGY. HALL',
+    'STA. RITA': 'STA. RITA BRGY. HALL',
   };
 
   /// Resolve a booking system station name to the RouteValidator station name

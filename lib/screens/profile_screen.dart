@@ -6,7 +6,7 @@ import '../models/booking.dart';
 import '../services/nfc_auth_service.dart';
 import '../services/nfc_reader_mode_service.dart';
 import '../services/app_state.dart';
-import 'records_screen.dart';
+// records_screen import removed (manual mode removed)
 
 class ProfileScreen extends StatefulWidget {
   final String? routeInfo; // Display route information
@@ -24,10 +24,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _scanningDriver = false;
   String _driverStatus = '';
   StreamSubscription<Map<String, dynamic>>? _nfcSub;
-  
+
   // Driver change authorization state
   bool _waitingForDispatcherApproval = false;
-  Map<String, dynamic>? _pendingDriver; // Driver waiting for dispatcher approval
+  Map<String, dynamic>?
+      _pendingDriver; // Driver waiting for dispatcher approval
 
   @override
   Widget build(BuildContext context) {
@@ -45,251 +46,183 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         centerTitle: true,
       ),
-
       body: SingleChildScrollView(
         child: Padding(
           padding: EdgeInsets.all(screenW * 0.04),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-            const Text(
-              "USER INFORMATION",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+              const Text(
+                "USER INFORMATION",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
 
-            const SizedBox(height: 6),
-            // Route info display (North / South)
-            Text(
-              'Route: ${widget.routeInfo ?? 'Unknown'}',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[800]),
-              textAlign: TextAlign.left,
-            ),
+              const SizedBox(height: 6),
+              // Route info display (North / South)
+              Text(
+                'Route: ${widget.routeInfo ?? 'Unknown'}',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800]),
+                textAlign: TextAlign.left,
+              ),
 
-            const Divider(thickness: 1),
+              const Divider(thickness: 1),
 
-            // Conductor card is always visible
-            _roleCard(screenW, 'conductor'),
-            SizedBox(height: screenH * 0.02),
+              // Conductor card is always visible
+              _roleCard(screenW, 'conductor'),
+              SizedBox(height: screenH * 0.02),
 
-            // Driver card only shown after successful driver tap
-            if (_driver != null) _roleCardFromEmp(screenW, _driver!),
-            if (_driver == null) _driverTapCard(screenW),
+              // Driver card only shown after successful driver tap
+              if (_driver != null) _roleCardFromEmp(screenW, _driver!),
+              if (_driver == null) _driverTapCard(screenW),
 
-            // Logout Button
-            SizedBox(
-              width: double.infinity,
-              height: screenH * 0.065,
-              child: ElevatedButton(
-                onPressed: () async {
-                  // Require NFC confirmation: only the same conductor may log out
-                  final current = AppState.instance.conductor;
-                  if (current == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('No conductor is currently logged in')),
-                    );
-                    return;
-                  }
-
-                  // Show a modal that immediately starts polling the reader
-                  final bool? confirmed = await showDialog<bool>(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (ctx) {
-                      String status = 'Tap your ID card on the reader to confirm logout';
-                      bool loading = true;
-                      bool started = false;
-
-                      String norm(String? u) => (u ?? '').replaceAll(RegExp(r'[^A-Fa-f0-9]'), '').toUpperCase();
-                      final expectedUid = norm(current['uid']?.toString());
-
-                      return StatefulBuilder(
-                        builder: (ctx2, setState) {
-                          if (!started) {
-                            started = true;
-                            // Subscribe to ReaderMode events for the duration of the dialog
-                            StreamSubscription<Map<String, dynamic>>? sub;
-                            sub = NFCReaderModeService.instance.onTag.listen((user) async {
-                              final actualUid = norm(user['uid']?.toString());
-                              if (actualUid.isEmpty) {
-                                setState(() {
-                                  status = 'No card detected. Waiting...';
-                                  loading = false;
-                                });
-                                return;
-                              }
-
-                              if (actualUid != expectedUid) {
-                                setState(() {
-                                  status = 'Card does not match. Try again.';
-                                  loading = false;
-                                });
-                                return;
-                              }
-
-                              // Matched: cancel subscription and close dialog with success
-                              try {
-                                await sub?.cancel();
-                              } catch (_) {}
-                              if (Navigator.canPop(ctx2)) Navigator.pop(ctx2, true);
-                            });
-                          }
-
-                          return AlertDialog(
-                            title: const Text('Confirm Logout'),
-                            content: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(status),
-                                const SizedBox(height: 12),
-                                if (loading) const CircularProgressIndicator(),
-                              ],
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.pop(ctx2, false);
-                                },
-                                child: const Text('Cancel'),
-                              ),
-                            ],
-                          );
-                        },
+              // Logout Button
+              SizedBox(
+                width: double.infinity,
+                height: screenH * 0.065,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    // Require NFC confirmation: only the same conductor may log out
+                    final current = AppState.instance.conductor;
+                    if (current == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content:
+                                Text('No conductor is currently logged in')),
                       );
-                    },
-                  );
-
-                  if (confirmed != true) return;
-
-                  // UID matched and dialog closed: proceed to clear persisted and in-memory bookings and session
-                  try {
-                    final uid = current['uid']?.toString();
-                    if (uid != null && uid.isNotEmpty) {
-                      await LocalStorage.deleteBookingsForConductor(uid);
+                      return;
                     }
-                  } catch (_) {}
-                  // Clear in-memory bookings
-                  try {
-                    BookingManager().clearBookings();
-                  } catch (_) {}
 
-                  // Clear session from both AppState and persistent storage
-                  AppState.instance.clearSession();
-                  await LocalStorage.clearCurrentConductor();
-                  await LocalStorage.clearLastScreen(); // Clear navigation state on logout
+                    // Show a modal that immediately starts polling the reader
+                    final bool? confirmed = await showDialog<bool>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (ctx) {
+                        String status =
+                            'Tap your ID card on the reader to confirm logout';
+                        bool loading = true;
+                        bool started = false;
 
-                  // Reset ReaderMode debounce and ensure reader mode is active
-                  try {
-                    NFCReaderModeService.instance.resetDebounce();
-                    await NFCReaderModeService.instance.start();
-                    // small delay to let native reader initialize
-                    await Future.delayed(const Duration(milliseconds: 250));
-                  } catch (_) {}
+                        String norm(String? u) => (u ?? '')
+                            .replaceAll(RegExp(r'[^A-Fa-f0-9]'), '')
+                            .toUpperCase();
+                        final expectedUid = norm(current['uid']?.toString());
 
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    (route) => false,
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green[700],
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                        return StatefulBuilder(
+                          builder: (ctx2, setState) {
+                            if (!started) {
+                              started = true;
+                              // Subscribe to ReaderMode events for the duration of the dialog
+                              StreamSubscription<Map<String, dynamic>>? sub;
+                              sub = NFCReaderModeService.instance.onTag
+                                  .listen((user) async {
+                                final actualUid = norm(user['uid']?.toString());
+                                if (actualUid.isEmpty) {
+                                  setState(() {
+                                    status = 'No card detected. Waiting...';
+                                    loading = false;
+                                  });
+                                  return;
+                                }
+
+                                if (actualUid != expectedUid) {
+                                  setState(() {
+                                    status = 'Card does not match. Try again.';
+                                    loading = false;
+                                  });
+                                  return;
+                                }
+
+                                // Matched: cancel subscription and close dialog with success
+                                try {
+                                  await sub?.cancel();
+                                } catch (_) {}
+                                if (Navigator.canPop(ctx2))
+                                  Navigator.pop(ctx2, true);
+                              });
+                            }
+
+                            return AlertDialog(
+                              title: const Text('Confirm Logout'),
+                              content: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(status),
+                                  const SizedBox(height: 12),
+                                  if (loading)
+                                    const CircularProgressIndicator(),
+                                ],
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(ctx2, false);
+                                  },
+                                  child: const Text('Cancel'),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      },
+                    );
+
+                    if (confirmed != true) return;
+
+                    // UID matched and dialog closed: proceed to clear persisted and in-memory bookings and session
+                    try {
+                      final uid = current['uid']?.toString();
+                      if (uid != null && uid.isNotEmpty) {
+                        await LocalStorage.deleteBookingsForConductor(uid);
+                      }
+                    } catch (_) {}
+                    // Clear in-memory bookings
+                    try {
+                      BookingManager().clearBookings();
+                    } catch (_) {}
+
+                    // Clear session from both AppState and persistent storage
+                    AppState.instance.clearSession();
+                    await LocalStorage.clearCurrentConductor();
+                    await LocalStorage
+                        .clearLastScreen(); // Clear navigation state on logout
+
+                    // Reset ReaderMode debounce and ensure reader mode is active
+                    try {
+                      NFCReaderModeService.instance.resetDebounce();
+                      await NFCReaderModeService.instance.start();
+                      // small delay to let native reader initialize
+                      await Future.delayed(const Duration(milliseconds: 250));
+                    } catch (_) {}
+
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green[700],
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    "LOG OUT",
+                    style: TextStyle(color: Colors.white, fontSize: 16),
                   ),
                 ),
-                child: const Text(
-                  "LOG OUT",
-                  style: TextStyle(color: Colors.white, fontSize: 16),
-                ),
               ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-            // Switch to Manual button
-            SizedBox(
-              width: double.infinity,
-              height: screenH * 0.065,
-              child: OutlinedButton(
-                onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Switch to Manual'),
-                      content: const Text('Switch to manual ticketing? POS records will be marked as unfinished.'),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-                        ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Confirm')),
-                      ],
-                    ),
-                  );
-
-                  if (confirm != true) return;
-
-                  // Set manual mode persistently
-                  await LocalStorage.setManualMode(true);
-
-                  // Prompt dispatcher tap to acknowledge and proceed to Records
-                  final bool? dispConfirmed = await showDialog<bool>(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (ctx) {
-                      String status = 'Tap dispatcher ID to confirm manual mode';
-                      bool loading = true;
-                      bool started = false;
-
-                      return StatefulBuilder(builder: (ctx2, setState) {
-                        if (!started) {
-                          started = true;
-                          StreamSubscription<Map<String, dynamic>>? sub;
-                          sub = NFCReaderModeService.instance.onTag.listen((user) async {
-                            final role = (user['role'] ?? '').toString().toLowerCase();
-                            if (role != 'dispatcher') {
-                              setState(() {
-                                status = 'Card does not belong to a dispatcher. Tap dispatcher card.';
-                                loading = false;
-                              });
-                              return;
-                            }
-                            try { await sub?.cancel(); } catch (_) {}
-                            if (Navigator.canPop(ctx2)) Navigator.pop(ctx2, true);
-                          });
-                        }
-
-                        return AlertDialog(
-                          title: const Text('Dispatcher Confirmation'),
-                          content: Column(mainAxisSize: MainAxisSize.min, children: [Text(status), if (loading) const SizedBox(height:12), if (loading) const CircularProgressIndicator()]),
-                          actions: [TextButton(onPressed: () => Navigator.pop(ctx2, false), child: const Text('Cancel'))],
-                        );
-                      });
-                    },
-                  );
-
-                  // Navigate to Records regardless (dispatcher confirmed or not) but show snackbar
-                  if (dispConfirmed == true) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Manual mode enabled')));
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Manual mode enabled (no dispatcher confirmation)')));
-                  }
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const RecordsScreen()),
-                  );
-                },
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  side: BorderSide(color: Colors.red[400]!),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                child: const Text('Switch to Manual', style: TextStyle(color: Colors.red, fontSize: 16)),
-              ),
-            ),
-          ],
-        ),
+              // Manual mode removed: button intentionally omitted
+            ],
+          ),
         ),
       ),
     );
@@ -300,46 +233,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     // Restore driver from AppState if already set
     _driver = AppState.instance.driver;
-    debugPrint('[PROFILE] initState: driver from AppState = ${_driver?['name']} uid=${_driver?['uid']}');
-    
+    debugPrint(
+        '[PROFILE] initState: driver from AppState = ${_driver?['name']} uid=${_driver?['uid']}');
+
     // Subscribe to native ReaderMode for driver tap detection
     _nfcSub = NFCReaderModeService.instance.onTag.listen((user) {
-      debugPrint('[PROFILE] NFC event received: name=${user['name']}, role=${user['role']}, uid=${user['uid']}');
+      debugPrint(
+          '[PROFILE] NFC event received: name=${user['name']}, role=${user['role']}, uid=${user['uid']}');
       final role = (user['role'] ?? '').toString().toLowerCase();
-      
+
       // If waiting for dispatcher approval, check if this is a dispatcher
       if (_waitingForDispatcherApproval) {
         if (role == 'dispatcher') {
-          debugPrint('[PROFILE] Dispatcher ${user['name']} approved driver change');
+          debugPrint(
+              '[PROFILE] Dispatcher ${user['name']} approved driver change');
           _approveDriverChange();
         } else {
-          debugPrint('[PROFILE] Non-dispatcher tapped during approval wait: $role');
+          debugPrint(
+              '[PROFILE] Non-dispatcher tapped during approval wait: $role');
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Only dispatchers can approve. Card belongs to $role.')),
+            SnackBar(
+                content: Text(
+                    'Only dispatchers can approve. Card belongs to $role.')),
           );
         }
         return;
       }
-      
+
       // Normal driver detection
       if (role == 'driver') {
         // Check if this is a different driver than currently registered
         final currentDriverUid = _driver?['uid']?.toString();
         final newDriverUid = user['uid']?.toString();
-        
+
         if (_driver != null && currentDriverUid != newDriverUid) {
           // Different driver tapped - request dispatcher approval
-          debugPrint('[PROFILE] Different driver tapped: ${user['name']} (current: ${_driver!['name']})');
+          debugPrint(
+              '[PROFILE] Different driver tapped: ${user['name']} (current: ${_driver!['name']})');
           _showDriverChangeDialog(user);
         } else if (_driver == null) {
           // No driver yet, register immediately
-          debugPrint('[PROFILE] Driver detected and _driver is null, storing: ${user['name']}');
+          debugPrint(
+              '[PROFILE] Driver detected and _driver is null, storing: ${user['name']}');
           setState(() {
             _driver = user;
             _driverStatus = '';
           });
           AppState.instance.setDriver(user);
-          
+
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('DRIVER ${user['name'] ?? '—'} detected')),
@@ -353,11 +294,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     });
   }
-  
+
   void _showDriverChangeDialog(Map<String, dynamic> newDriver) {
     final newName = newDriver['name'] ?? '—';
     final currentName = _driver?['name'] ?? '—';
-    
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -402,25 +343,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
-    
+
     setState(() {
       _waitingForDispatcherApproval = true;
       _pendingDriver = newDriver;
     });
   }
-  
+
   void _approveDriverChange() {
     Navigator.pop(context); // Close dialog
-    
+
     setState(() {
       _driver = _pendingDriver;
       _driverStatus = '';
       _waitingForDispatcherApproval = false;
       _pendingDriver = null;
     });
-    
+
     AppState.instance.setDriver(_driver);
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Driver changed to ${_driver!['name']}')),
     );
@@ -441,7 +382,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Text(
               label,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 4),
@@ -464,7 +408,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             "$label:",
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
           ),
-          Flexible(child: Text(value, style: TextStyle(fontSize: isValueSmall ? 13 : 14), overflow: TextOverflow.ellipsis, textAlign: TextAlign.right)),
+          Flexible(
+              child: Text(value,
+                  style: TextStyle(fontSize: isValueSmall ? 13 : 14),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right)),
         ],
       ),
     );
@@ -478,12 +426,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } else {
       // Fallback: fetch first employee matching role (for other roles)
       final all = LocalStorage.getAllEmployees();
-      emp = all.firstWhere((e) => (e['role'] ?? '').toString().toLowerCase() == role, orElse: () => {});
+      emp = all.firstWhere(
+          (e) => (e['role'] ?? '').toString().toLowerCase() == role,
+          orElse: () => {});
     }
 
     final name = emp.isEmpty ? '—' : (emp['name'] ?? '—');
     final uid = emp.isEmpty ? null : (emp['uid'] ?? '');
-    final masked = uid == null || uid.toString().isEmpty ? '****' : _maskUid(uid.toString());
+    final masked = uid == null || uid.toString().isEmpty
+        ? '****'
+        : _maskUid(uid.toString());
 
     return Card(
       elevation: 0,
@@ -496,7 +448,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // Role label removed; position shown below
             _infoRow('NAME', name),
             _infoRow('Employee ID', masked, isValueSmall: true),
-            _infoRow('Position', role[0].toUpperCase() + role.substring(1), isValueSmall: true),
+            _infoRow('Position', role[0].toUpperCase() + role.substring(1),
+                isValueSmall: true),
           ],
         ),
       ),
@@ -520,7 +473,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // Role label removed; position shown below
             _infoRow('NAME', name),
             _infoRow('Employee ID', masked, isValueSmall: true),
-            _infoRow('Position', role[0].toUpperCase() + role.substring(1), isValueSmall: true),
+            _infoRow('Position', role[0].toUpperCase() + role.substring(1),
+                isValueSmall: true),
           ],
         ),
       ),
@@ -545,13 +499,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                _scanningDriver ? 'Scanning for driver card…' : 'Tap driver card to show details',
+                _scanningDriver
+                    ? 'Scanning for driver card…'
+                    : 'Tap driver card to show details',
                 style: const TextStyle(fontSize: 16),
                 textAlign: TextAlign.center,
               ),
               if (_driverStatus.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                Text(_driverStatus, style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
+                Text(_driverStatus,
+                    style: const TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center),
               ],
             ],
           ),
@@ -564,7 +522,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // normalizedUid is hex uppercase without separators, e.g. EB4D4506
     final pairs = <String>[];
     for (var i = 0; i < normalizedUid.length; i += 2) {
-      if (i + 2 <= normalizedUid.length) pairs.add(normalizedUid.substring(i, i + 2));
+      if (i + 2 <= normalizedUid.length)
+        pairs.add(normalizedUid.substring(i, i + 2));
     }
     if (pairs.isEmpty) return '****';
     // mask all except last pair
