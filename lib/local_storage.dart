@@ -569,8 +569,9 @@ class LocalStorage {
     try {
       final box = Hive.box<Map>(_sessionBox);
       final session = box.get('sessionData');
-      if (session != null && session['currentTripId'] != null)
+      if (session != null && session['currentTripId'] != null) {
         return session['currentTripId'].toString();
+      }
       // Generate a default trip id if missing
       final id =
           'TRIP-${DateTime.now().toIso8601String().replaceAll(':', '').split('.').first}';

@@ -47,12 +47,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         centerTitle: true,
       ),
-      body: Padding(
-        padding: EdgeInsets.all(screenW * 0.04),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.all(screenW * 0.04),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
               const Text(
                 "USER INFORMATION",
                 style: TextStyle(
@@ -73,26 +73,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
 
               const SizedBox(height: 6),
-              // Trip ID display (non-scrollable, compact)
-              Row(
-                children: [
-                  const Text(
-                    'TRIP ID: ',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Expanded(
-                    child: Text(
-                      LocalStorage.getCurrentTripId() ?? '—',
-                      style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[800]),
-                      textAlign: TextAlign.left,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
+              // Trip info
+              _infoRow('TRIP ID', LocalStorage.getCurrentTripId()),
+              _infoRow('VEHICLE NO.', LocalStorage.getCurrentVehicleNo(),
+                  isValueSmall: true),
 
               const Divider(thickness: 1),
 
@@ -113,7 +97,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     // Require NFC confirmation: only the same conductor may log out
                     final current = AppState.instance.conductor;
                     if (current == null) {
-                      await Dialogs.showMessage(context, 'Error', 'No conductor is currently logged in');
+                      await Dialogs.showMessage(context, 'Error',
+                          'No conductor is currently logged in');
                       return;
                     }
 
@@ -262,7 +247,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final role = (user['role'] ?? '').toString().toLowerCase();
 
       // If waiting for dispatcher approval, check if this is a dispatcher
-        if (_waitingForDispatcherApproval) {
+      if (_waitingForDispatcherApproval) {
         if (role == 'dispatcher') {
           debugPrint(
               '[PROFILE] Dispatcher ${user['name']} approved driver change');
@@ -270,7 +255,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         } else {
           debugPrint(
               '[PROFILE] Non-dispatcher tapped during approval wait: $role');
-          await Dialogs.showMessage(context, 'Unauthorized', 'Only dispatchers can approve. Card belongs to $role.');
+          await Dialogs.showMessage(context, 'Unauthorized',
+              'Only dispatchers can approve. Card belongs to $role.');
         }
         return;
       }
@@ -297,7 +283,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           AppState.instance.setDriver(user);
 
           if (mounted) {
-            await Dialogs.showMessage(context, 'Driver Detected', 'DRIVER ${user['name'] ?? '—'} detected');
+            await Dialogs.showMessage(context, 'Driver Detected',
+                'DRIVER ${user['name'] ?? '—'} detected');
           }
         } else {
           debugPrint('[PROFILE] Same driver tapped again, ignoring');
@@ -316,7 +303,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('Driver Change Authorization'),
+        elevation: 10,
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Center(
+          child: Text(
+            'DRIVER CHANGE AUTHORIZATION',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,7 +372,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     AppState.instance.setDriver(_driver);
 
-    await Dialogs.showMessage(context, 'Driver Changed', 'Driver changed to ${_driver!['name']}');
+    await Dialogs.showMessage(
+        context, 'Driver Changed', 'Driver changed to ${_driver!['name']}');
   }
 
   @override

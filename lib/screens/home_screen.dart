@@ -785,8 +785,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 try {
                   nfcSubscription.cancel();
                 } catch (_) {}
-                if (Navigator.canPop(dialogContext))
+                if (Navigator.canPop(dialogContext)) {
                   Navigator.pop(dialogContext);
+                }
 
                 // Require driver tap before allowing navigation to RecordsScreen.
                 final proceed = await _requireDriverBeforeRecords(employee);
@@ -800,7 +801,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   );
                 }
-                if (!completer.isCompleted) completer.complete();
+                if (!completer.isCompleted) {
+                  completer.complete();
+                }
               } else {
                 Dialogs.showMessage(context, 'Not allowed',
                     'Card is ${employee['role']}, not dispatcher');
@@ -847,9 +850,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   try {
                     nfcSubscription.cancel();
                   } catch (_) {}
-                  if (Navigator.canPop(dialogContext))
+                  if (Navigator.canPop(dialogContext)) {
                     Navigator.pop(dialogContext);
-                  if (!completer.isCompleted) completer.complete();
+                  }
+                  if (!completer.isCompleted) {
+                    completer.complete();
+                  }
                 },
                 child: const Text('Cancel'),
               ),
@@ -906,7 +912,9 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: const [
               Text(
-                  'Please ask the driver to tap their ID on the device to continue.'),
+                'Please ask the driver to tap their ID on the device to continue.',
+                textAlign: TextAlign.center,
+              ),
               SizedBox(height: 12),
               CircularProgressIndicator(),
             ],

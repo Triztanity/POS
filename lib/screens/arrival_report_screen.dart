@@ -753,9 +753,10 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
           // Save to pending Hive box for later sync
           final box = await Hive.openBox('arrival_reports_pending');
           await box.put(tripId, report);
-          if (mounted)
+          if (mounted) {
             await Dialogs.showMessage(context, 'Offline',
                 'Report saved locally and will sync when online');
+          }
         } else {
           // Attempt Firestore upload
           final col = FirebaseFirestore.instance.collection('arrivalReports');
@@ -768,14 +769,16 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
           // Delete bookings from local storage after successful sync
           await LocalStorage.deleteBookingsForTrip(tripId);
 
-          if (mounted)
+          if (mounted) {
             await Dialogs.showMessage(
                 context, 'Uploaded', 'Arrival report uploaded');
+          }
         }
       } catch (e) {
-        if (mounted)
+        if (mounted) {
           await Dialogs.showMessage(
               context, 'Upload Failed', 'Failed to upload report: $e');
+        }
       }
 
       return true;

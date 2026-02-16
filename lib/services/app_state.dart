@@ -20,6 +20,13 @@ class AppState {
   Map<String, dynamic>? get pendingDriver => _pendingDriver;
 
   StreamSubscription<Map<String, dynamic>>? _nfcSub;
+  bool _inspectorModalActive = false;
+
+  bool get inspectorModalActive => _inspectorModalActive;
+
+  void setInspectorModalActive(bool v) {
+    _inspectorModalActive = v;
+  }
 
   void setConductor(Map<String, dynamic>? conductor) {
     debugPrint('[APP-STATE] setConductor: ${conductor?['name']}');
@@ -51,10 +58,12 @@ class AppState {
         if (role == 'driver') {
           final currentUid = _driver?['uid']?.toString();
           if (_driver == null) {
-            debugPrint('[APP-STATE] global NFC: registering driver ${user['name']}');
+            debugPrint(
+                '[APP-STATE] global NFC: registering driver ${user['name']}');
             setDriver(user);
           } else if (currentUid != uid) {
-            debugPrint('[APP-STATE] global NFC: different driver tapped, setting pendingDriver');
+            debugPrint(
+                '[APP-STATE] global NFC: different driver tapped, setting pendingDriver');
             _pendingDriver = user;
           } else {
             // same driver tapped again - ignore
@@ -62,7 +71,8 @@ class AppState {
         } else if (role == 'dispatcher') {
           // If there's a pending driver change and dispatcher tapped, approve it here
           if (_pendingDriver != null) {
-            debugPrint('[APP-STATE] dispatcher tapped, approving pending driver change');
+            debugPrint(
+                '[APP-STATE] dispatcher tapped, approving pending driver change');
             setDriver(_pendingDriver);
             _pendingDriver = null;
           }

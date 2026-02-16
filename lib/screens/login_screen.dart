@@ -228,14 +228,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   color: Colors.green[700],
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Text(
-                  "AFCS 144",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                  ),
+                child: const Icon(
+                  Icons.directions_bus,
+                  size: 48,
+                  color: Colors.white,
                 ),
               ),
 

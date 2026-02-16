@@ -5,12 +5,14 @@ class Inspection {
   final String busNumber;
   final String tripSession;
   final String? inspectorUid;
+  final String? inspectorName;
   final String conductorUid;
   final String driverUid;
   final int manualPassengerCount;
   final int systemPassengerCount;
   final bool isCleared; // true if counts match
-  final String? discrepancyResolved; // 'Resolved', 'Not Resolved', or null if cleared
+  final String?
+      discrepancyResolved; // 'Resolved', 'Not Resolved', or null if cleared
   final String? resolutionReason; // Reason from dropdown (if resolved)
   final String? customExplanation; // Custom text if 'Other' selected
   final String? comments; // Inspector comments
@@ -23,6 +25,7 @@ class Inspection {
     required this.busNumber,
     required this.tripSession,
     this.inspectorUid,
+    this.inspectorName,
     required this.conductorUid,
     required this.driverUid,
     required this.manualPassengerCount,
@@ -43,6 +46,7 @@ class Inspection {
       'busNumber': busNumber,
       'tripSession': tripSession,
       'inspectorUid': inspectorUid,
+      'inspectorName': inspectorName,
       'conductorUid': conductorUid,
       'driverUid': driverUid,
       'manualPassengerCount': manualPassengerCount,
@@ -64,16 +68,25 @@ class Inspection {
       busNumber: m['busNumber']?.toString() ?? '',
       tripSession: m['tripSession']?.toString() ?? '',
       inspectorUid: m['inspectorUid']?.toString(),
+      inspectorName: m['inspectorName']?.toString(),
       conductorUid: m['conductorUid']?.toString() ?? '',
       driverUid: m['driverUid']?.toString() ?? '',
-      manualPassengerCount: (m['manualPassengerCount'] is int) ? m['manualPassengerCount'] : int.tryParse(m['manualPassengerCount']?.toString() ?? '0') ?? 0,
-      systemPassengerCount: (m['systemPassengerCount'] is int) ? m['systemPassengerCount'] : int.tryParse(m['systemPassengerCount']?.toString() ?? '0') ?? 0,
-      isCleared: (m['isCleared'] is bool) ? m['isCleared'] : (m['isCleared']?.toString() == 'true'),
+      manualPassengerCount: (m['manualPassengerCount'] is int)
+          ? m['manualPassengerCount']
+          : int.tryParse(m['manualPassengerCount']?.toString() ?? '0') ?? 0,
+      systemPassengerCount: (m['systemPassengerCount'] is int)
+          ? m['systemPassengerCount']
+          : int.tryParse(m['systemPassengerCount']?.toString() ?? '0') ?? 0,
+      isCleared: (m['isCleared'] is bool)
+          ? m['isCleared']
+          : (m['isCleared']?.toString() == 'true'),
       discrepancyResolved: m['discrepancyResolved']?.toString(),
       resolutionReason: m['resolutionReason']?.toString(),
       customExplanation: m['customExplanation']?.toString(),
       comments: m['comments']?.toString(),
-      isSynced: (m['isSynced'] is bool) ? m['isSynced'] : (m['isSynced']?.toString() == 'true'),
+      isSynced: (m['isSynced'] is bool)
+          ? m['isSynced']
+          : (m['isSynced']?.toString() == 'true'),
       syncError: m['syncError']?.toString(),
     );
   }

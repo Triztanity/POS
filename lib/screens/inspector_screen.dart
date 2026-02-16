@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:uuid/uuid.dart';
+import 'dart:math';
 import '../services/nfc_reader_mode_service.dart';
 import '../models/inspection.dart';
 import '../local_storage.dart';
@@ -25,6 +25,9 @@ class _InspectorScreenState extends State<InspectorScreen> {
   String? _selectedReason;
   bool _showCustomExplanation = false;
   late TextEditingController _customExplanationController;
+  late List<String> _stops;
+  late List<String> _dropdownStops;
+  String? _currentLocation;
 
   int _systemPassengerCount = 0;
   bool _isCleared = false;
@@ -44,44 +47,101 @@ class _InspectorScreenState extends State<InspectorScreen> {
     _manualCountController = TextEditingController();
     _commentsController = TextEditingController();
     _customExplanationController = TextEditingController();
-
-    // Get system passenger count from BookingManager
+    // Prepare stops and default current location, then get system passenger count
+    final forwardStops = FareTable.placeNamesWithKm;
+    // Prefer the persisted route (set at route selection / dispatch) if available,
+    // otherwise use the routeDirection passed into the screen.
+    final currentRoute = LocalStorage.getCurrentRoute();
+    final routeId =
+        currentRoute != null ? currentRoute['routeId'] : widget.routeDirection;
+    _stops = routeId == 'north_to_south'
+        ? List.from(forwardStops)
+        : List.from(forwardStops.reversed);
+    // Use uppercase OVERVIEW to match other screens
+    _dropdownStops = ['OVERVIEW', ..._stops];
+    _currentLocation = 'OVERVIEW';
     _calculateSystemPassengerCount();
+  }
+
+  List<Booking> _getCombinedBookings() {
+    var bookings = BookingManager().getBookings().toList();
+    final walkins =
+        LocalStorage.loadWalkinsForTrip(LocalStorage.getCurrentTripId())
+            .toList();
+    for (final walkin in walkins) {
+      final booking = Booking(
+        id: walkin['id'] ?? '',
+        passengerName: walkin['passengerName'] ?? 'Walk-in',
+        route: walkin['route'] ?? '',
+        date: walkin['date'] ?? '',
+        time: walkin['time'] ?? '',
+        passengers: walkin['passengers'] ?? 1,
+        fromLocation: walkin['fromLocation'] ?? '',
+        toLocation: walkin['toLocation'] ?? '',
+        passengerType: walkin['passengerType'] ?? 'REGULAR',
+        amount: walkin['amount'] ?? 0.0,
+        status: 'on-board',
+        passengerUid: null,
+      );
+      if (!bookings.any((b) => b.id == booking.id)) bookings.add(booking);
+    }
+    return bookings;
+  }
+
+  String _normalizeLocationName(String location) {
+    return FareTable.normalizePlaceName(location);
   }
 
   void _calculateSystemPassengerCount() {
     try {
-      final bookingManager = BookingManager();
-      final bookings = bookingManager.getBookings();
+      final bookings = _getCombinedBookings();
+      if (_currentLocation == 'OVERVIEW') {
+        // For inspector, show 0 for overview (match passengers screen on-board behavior)
+        setState(() {
+          _systemPassengerCount = 0;
+        });
+        return;
+      }
 
-      // Parse route direction
-      final forwardStops = FareTable.placeNamesWithKm;
-      final stops = widget.routeDirection == 'north_to_south'
-          ? List.from(forwardStops)
-          : List.from(forwardStops.reversed);
-      final currentLocation = stops.first;
+      final currentIdx = _stops.indexOf(_currentLocation ?? '');
+      if (currentIdx == -1) {
+        setState(() {
+          _systemPassengerCount = 0;
+        });
+        return;
+      }
 
       int count = 0;
-      final currentIdx = stops.indexOf(currentLocation);
-      if (currentIdx != -1) {
-        for (final booking in bookings) {
-          int fromIdx = -1, toIdx = -1;
-          for (int i = 0; i < stops.length; i++) {
-            final placeName = FareTable.extractPlaceName(stops[i]);
-            if (placeName == booking.fromLocation) {
-              fromIdx = i;
-            }
-            if (placeName == booking.toLocation) {
-              toIdx = i;
-            }
-          }
+      for (final booking in bookings) {
+        if (booking.status != 'on-board') continue;
 
-          if (fromIdx != -1 &&
-              toIdx != -1 &&
-              fromIdx <= currentIdx &&
-              currentIdx < toIdx) {
-            count += booking.passengers;
-          }
+        int fromIdx = -1, toIdx = -1;
+        final originNormalized = _normalizeLocationName(booking.fromLocation);
+        final destNormalized = _normalizeLocationName(booking.toLocation);
+        final originWords = originNormalized
+            .split(RegExp(r'\s+'))
+            .where((w) => w.isNotEmpty)
+            .toList();
+        final destWords = destNormalized
+            .split(RegExp(r'\s+'))
+            .where((w) => w.isNotEmpty)
+            .toList();
+
+        for (int i = 0; i < _stops.length; i++) {
+          final stopNormalized = _normalizeLocationName(_stops[i]);
+          final stopWords = stopNormalized
+              .split(RegExp(r'\s+'))
+              .where((w) => w.isNotEmpty)
+              .toList();
+          if (stopWords.every((sw) => originWords.contains(sw))) fromIdx = i;
+          if (stopWords.every((sw) => destWords.contains(sw))) toIdx = i;
+        }
+
+        if (fromIdx != -1 &&
+            toIdx != -1 &&
+            fromIdx <= currentIdx &&
+            currentIdx < toIdx) {
+          count += booking.passengers;
         }
       }
 
@@ -155,12 +215,20 @@ class _InspectorScreenState extends State<InspectorScreen> {
     }
 
     // Create and save inspection (use conductorUid from tap)
+    // Generate inspection id in format: Ins followed by 10 random digits
+    final rand = Random.secure();
+    final idNum = List.generate(10, (_) => rand.nextInt(10)).join();
+    final inspectionId = 'Ins$idNum';
+
     final inspection = Inspection(
-      id: const Uuid().v4(),
+      id: inspectionId,
       timestamp: DateTime.now().toIso8601String(),
       busNumber: 'TBD', // TODO: Get from app state
       tripSession: widget.routeDirection,
       inspectorUid: signatures['inspector'],
+      inspectorName:
+          LocalStorage.getEmployee(signatures['inspector'] ?? '')?['name']
+              ?.toString(),
       conductorUid: signatures['conductor'] ??
           AppState.instance.conductor?['uid']?.toString() ??
           'UNKNOWN',
@@ -193,6 +261,8 @@ class _InspectorScreenState extends State<InspectorScreen> {
     final completer = Completer<Map<String, String>?>();
 
     // Show dialog instructing taps
+    // Mark inspector modal active so global NFC handlers don't interrupt
+    AppState.instance.setInspectorModalActive(true);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -222,12 +292,26 @@ class _InspectorScreenState extends State<InspectorScreen> {
           });
 
           return AlertDialog(
-            title: const Text('Confirm Signatures'),
+            elevation: 10,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: Center(
+              child: Text(
+                'CONFIRM SIGNATURES',
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+              ),
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                    'Please tap the inspector card, then the conductor card on the device.'),
+                  'Please tap the inspector card, then the conductor card on the device.',
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -268,6 +352,13 @@ class _InspectorScreenState extends State<InspectorScreen> {
         } catch (_) {}
         completer.complete(null);
       }
+    });
+
+    // Ensure the modal-active flag is cleared when the signature collection finishes
+    completer.future.whenComplete(() {
+      try {
+        AppState.instance.setInspectorModalActive(false);
+      } catch (_) {}
     });
 
     return completer.future;
@@ -320,6 +411,44 @@ class _InspectorScreenState extends State<InspectorScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Location selector (same style as Passengers screen)
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Current Location',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          height: 36,
+                          child: DropdownButton<String>(
+                            value: _currentLocation,
+                            isExpanded: true,
+                            underline:
+                                Container(color: Colors.grey[300], height: 1),
+                            items: _dropdownStops
+                                .map((s) =>
+                                    DropdownMenuItem(value: s, child: Text(s)))
+                                .toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _currentLocation = value;
+                                _calculateSystemPassengerCount();
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: screenW * 0.03),
+                ],
+              ),
+              SizedBox(height: screenH * 0.02),
+
               // System and Manual count display side by side
               Row(
                 children: [

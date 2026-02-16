@@ -90,7 +90,9 @@ class _RecordsScreenState extends State<RecordsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: const [
               Text(
-                  'Please ask the driver to tap their ID on the device to continue.'),
+                'Please ask the driver to tap their ID on the device to continue.',
+                textAlign: TextAlign.center,
+              ),
               SizedBox(height: 12),
               CircularProgressIndicator(),
             ],
@@ -102,7 +104,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
                   await sub?.cancel();
                 } catch (_) {}
                 if (Navigator.canPop(ctx)) Navigator.pop(ctx);
-                if (!completer.isCompleted) completer.complete(false);
+                if (!completer.isCompleted) completer.complete();
               },
               child: const Text('Cancel'),
             ),
