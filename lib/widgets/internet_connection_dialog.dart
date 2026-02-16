@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import '../services/internet_connection_service.dart';
+import '../utils/dialogs.dart';
 
 /// InternetConnectionDialog
 /// Modal dialog shown when internet connection is required but unavailable
@@ -81,9 +82,8 @@ class _InternetConnectionDialogState extends State<InternetConnectionDialog> {
       await intent.launch();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error opening WiFi settings: $e')),
-        );
+        await Dialogs.showMessage(
+            context, 'Error', 'Error opening WiFi settings: $e');
       }
     }
   }

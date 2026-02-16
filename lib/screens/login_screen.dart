@@ -5,6 +5,7 @@ import '../services/nfc_reader_mode_service.dart';
 import '../services/app_state.dart';
 import '../models/booking.dart';
 import 'home_screen.dart';
+import '../utils/dialogs.dart';
 // route_selection_screen removed from post-login flow
 
 class LoginScreen extends StatefulWidget {
@@ -131,22 +132,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (mounted) {
       try {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Welcome, $name!')),
-        );
-        debugPrint('[LOGIN] Snackbar shown');
+        Dialogs.showMessage(context, 'Welcome', 'Welcome, $name!');
+        debugPrint('[LOGIN] dialog shown');
       } catch (e) {
-        debugPrint('[LOGIN] error showing snackbar: $e');
+        debugPrint('[LOGIN] error showing dialog: $e');
       }
     }
   }
 
-  void _loginManual() {
+  Future<void> _loginManual() async {
     final input = _nameController.text.trim();
     if (input.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter employee name or ID')),
-      );
+      await Dialogs.showMessage(
+          context, 'Login', 'Please enter employee name or ID');
       return;
     }
 
@@ -169,20 +167,16 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     if (match == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Not recognized — manual login failed')),
-      );
+      await Dialogs.showMessage(
+          context, 'Login failed', 'Not recognized — manual login failed');
       return;
     }
 
     // Only allow conductors to login on this device
     final role = (match['role'] ?? '').toString().toLowerCase();
     if (role != 'conductor') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                'Tap accepted for ${match['role']} ${match['name']}. Only CONDUCTOR can login on this device.')),
-      );
+      await Dialogs.showMessage(context, 'Login not allowed',
+          'Tap accepted for ${match['role']} ${match['name']}. Only CONDUCTOR can login on this device.');
       return;
     }
 
@@ -208,9 +202,8 @@ class _LoginScreenState extends State<LoginScreen> {
               HomeScreen(routeDirection: 'north_to_south', conductor: match)),
     );
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Welcome, ${match['name']}!')),
-      );
+      await Dialogs.showMessage(
+          context, 'Welcome', 'Welcome, ${match['name']}!');
     }
   }
 

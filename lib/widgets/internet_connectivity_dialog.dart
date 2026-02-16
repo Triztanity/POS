@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:io' show Platform;
 import 'package:android_intent_plus/android_intent.dart';
+import '../utils/dialogs.dart';
 
 class InternetConnectivityDialog extends StatefulWidget {
   const InternetConnectivityDialog({super.key});
 
   @override
-  State<InternetConnectivityDialog> createState() => _InternetConnectivityDialogState();
+  State<InternetConnectivityDialog> createState() =>
+      _InternetConnectivityDialogState();
 }
 
-class _InternetConnectivityDialogState extends State<InternetConnectivityDialog> {
+class _InternetConnectivityDialogState
+    extends State<InternetConnectivityDialog> {
   final Connectivity _connectivity = Connectivity();
   bool _isConnected = false;
   bool _isChecking = true;
@@ -45,10 +48,8 @@ class _InternetConnectivityDialogState extends State<InternetConnectivityDialog>
       // For non-Android platforms we can't programmatically open WiFi settings reliably;
       // just show a brief message to the user.
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Please open Wi-Fi settings on your device.'),
-        duration: Duration(seconds: 3),
-      ));
+      await Dialogs.showMessage(
+          context, 'Notice', 'Please open Wi-Fi settings on your device.');
     }
   }
 
@@ -81,7 +82,8 @@ class _InternetConnectivityDialogState extends State<InternetConnectivityDialog>
                     children: [
                       CircularProgressIndicator(),
                       SizedBox(height: 12),
-                      Text('Checking connection...', style: TextStyle(fontSize: 14, color: Colors.grey)),
+                      Text('Checking connection...',
+                          style: TextStyle(fontSize: 14, color: Colors.grey)),
                     ],
                   ),
                 )
@@ -89,7 +91,9 @@ class _InternetConnectivityDialogState extends State<InternetConnectivityDialog>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: _isConnected ? Colors.green.withAlpha(30) : Colors.red.withAlpha(30),
+                    color: _isConnected
+                        ? Colors.green.withAlpha(30)
+                        : Colors.red.withAlpha(30),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: _isConnected ? Colors.green : Colors.red,
@@ -105,7 +109,9 @@ class _InternetConnectivityDialogState extends State<InternetConnectivityDialog>
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        _isConnected ? 'Connected to Internet' : 'Not Connected',
+                        _isConnected
+                            ? 'Connected to Internet'
+                            : 'Not Connected',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -117,7 +123,8 @@ class _InternetConnectivityDialogState extends State<InternetConnectivityDialog>
                         _isConnected
                             ? 'Your device is connected to the internet.'
                             : 'Please connect to WiFi to proceed.',
-                        style: const TextStyle(fontSize: 13, color: Colors.grey),
+                        style:
+                            const TextStyle(fontSize: 13, color: Colors.grey),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -159,7 +166,8 @@ class _InternetConnectivityDialogState extends State<InternetConnectivityDialog>
 
               // Done button (only enabled if connected)
               ElevatedButton(
-                onPressed: _isConnected ? () => Navigator.pop(context, true) : null,
+                onPressed:
+                    _isConnected ? () => Navigator.pop(context, true) : null,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   backgroundColor: _isConnected ? Colors.green : Colors.grey,

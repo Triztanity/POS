@@ -132,25 +132,44 @@ class LocalStorage {
     // Seed known authorized UIDs (admin-provisioned). These are canonicalized
     // and only added if missing. Update names/roles here as needed.
     final seeds = [
-      {'uid': '43:56:3F:06', 'name': 'Perky Malabanan', 'role': 'conductor'},
-      {'uid': '6D:ED:43:06', 'name': 'Juan Dela Cruz', 'role': 'conductor'},
-      {'uid': '4E:22:43:06', 'name': 'Pepsi Paloma', 'role': 'driver'},
-      {'uid': 'EC:D5:41:06', 'name': 'Ricardo Dalisay', 'role': 'driver'},
-      {'uid': '47:29:42:06', 'name': 'John Earl', 'role': 'dispatcher'},
-      {'uid': '69:64:3F:06', 'name': 'David Dimaguiba', 'role': 'dispatcher'},
-      {'uid': '05:91:41:06', 'name': 'Inspector Card', 'role': 'inspector'},
+      {'uid': '43:56:3F:06', 'name': 'Conductor A', 'role': 'conductor'},
+      {'uid': '6D:ED:43:06', 'name': 'Conductor B', 'role': 'conductor'},
+      {'uid': '4E:22:43:06', 'name': 'Driver A', 'role': 'driver'},
+      {'uid': 'EC:D5:41:06', 'name': 'Driver B', 'role': 'driver'},
+      {'uid': '47:29:42:06', 'name': 'Dispatcher A', 'role': 'dispatcher'},
+      {'uid': '69:64:3F:06', 'name': 'Dispatcher B', 'role': 'dispatcher'},
+      {'uid': '05:91:41:06', 'name': 'Inspector', 'role': 'inspector'},
     ];
 
     for (final s in seeds) {
       try {
         final key = _normalizeUid(s['uid'] as String);
-        if (box.get(key) == null) {
+        final existing = box.get(key);
+        if (existing == null) {
           await upsertEmployee({
             'uid': s['uid'],
             'name': s['name'],
             'role': s['role'],
             'synced': false
           });
+        } else {
+          try {
+            final existingMap =
+                Map<String, dynamic>.from(existing.cast<String, dynamic>());
+            final existingName = (existingMap['name'] ?? '').toString();
+            final existingRole = (existingMap['role'] ?? '').toString();
+            final seedName = (s['name'] ?? '').toString();
+            final seedRole = (s['role'] ?? '').toString();
+            // If seed provides a different name or role, update the stored record
+            if (existingName != seedName || existingRole != seedRole) {
+              final updated = Map<String, dynamic>.from(existingMap);
+              updated['name'] = seedName;
+              updated['role'] = seedRole;
+              // mark as not yet synced so changes can be propagated if applicable
+              updated['synced'] = false;
+              await upsertEmployee(updated);
+            }
+          } catch (_) {}
         }
       } catch (_) {}
     }

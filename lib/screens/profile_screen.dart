@@ -7,6 +7,7 @@ import '../services/nfc_auth_service.dart';
 import '../services/nfc_reader_mode_service.dart';
 import '../services/app_state.dart';
 // records_screen import removed (manual mode removed)
+import '../utils/dialogs.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? routeInfo; // Display route information
@@ -46,12 +47,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: EdgeInsets.all(screenW * 0.04),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+      body: Padding(
+        padding: EdgeInsets.all(screenW * 0.04),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
               const Text(
                 "USER INFORMATION",
                 style: TextStyle(
@@ -69,6 +70,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     fontWeight: FontWeight.w600,
                     color: Colors.grey[800]),
                 textAlign: TextAlign.left,
+              ),
+
+              const SizedBox(height: 6),
+              // Trip ID display (non-scrollable, compact)
+              Row(
+                children: [
+                  const Text(
+                    'TRIP ID: ',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Expanded(
+                    child: Text(
+                      LocalStorage.getCurrentTripId() ?? '—',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[800]),
+                      textAlign: TextAlign.left,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
 
               const Divider(thickness: 1),
@@ -90,11 +113,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     // Require NFC confirmation: only the same conductor may log out
                     final current = AppState.instance.conductor;
                     if (current == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content:
-                                Text('No conductor is currently logged in')),
-                      );
+                      await Dialogs.showMessage(context, 'Error', 'No conductor is currently logged in');
                       return;
                     }
 
@@ -237,13 +256,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         '[PROFILE] initState: driver from AppState = ${_driver?['name']} uid=${_driver?['uid']}');
 
     // Subscribe to native ReaderMode for driver tap detection
-    _nfcSub = NFCReaderModeService.instance.onTag.listen((user) {
+    _nfcSub = NFCReaderModeService.instance.onTag.listen((user) async {
       debugPrint(
           '[PROFILE] NFC event received: name=${user['name']}, role=${user['role']}, uid=${user['uid']}');
       final role = (user['role'] ?? '').toString().toLowerCase();
 
       // If waiting for dispatcher approval, check if this is a dispatcher
-      if (_waitingForDispatcherApproval) {
+        if (_waitingForDispatcherApproval) {
         if (role == 'dispatcher') {
           debugPrint(
               '[PROFILE] Dispatcher ${user['name']} approved driver change');
@@ -251,11 +270,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         } else {
           debugPrint(
               '[PROFILE] Non-dispatcher tapped during approval wait: $role');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text(
-                    'Only dispatchers can approve. Card belongs to $role.')),
-          );
+          await Dialogs.showMessage(context, 'Unauthorized', 'Only dispatchers can approve. Card belongs to $role.');
         }
         return;
       }
@@ -282,9 +297,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           AppState.instance.setDriver(user);
 
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('DRIVER ${user['name'] ?? '—'} detected')),
-            );
+            await Dialogs.showMessage(context, 'Driver Detected', 'DRIVER ${user['name'] ?? '—'} detected');
           }
         } else {
           debugPrint('[PROFILE] Same driver tapped again, ignoring');
@@ -350,7 +363,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  void _approveDriverChange() {
+  Future<void> _approveDriverChange() async {
     Navigator.pop(context); // Close dialog
 
     setState(() {
@@ -362,9 +375,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     AppState.instance.setDriver(_driver);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Driver changed to ${_driver!['name']}')),
-    );
+    await Dialogs.showMessage(context, 'Driver Changed', 'Driver changed to ${_driver!['name']}');
   }
 
   @override

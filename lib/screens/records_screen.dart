@@ -7,6 +7,7 @@ import '../services/nfc_reader_mode_service.dart';
 import '../local_storage.dart';
 import 'arrival_report_screen.dart';
 import '../widgets/internet_connectivity_dialog.dart';
+import '../utils/dialogs.dart';
 
 class RecordsScreen extends StatefulWidget {
   final Map<String, dynamic>? dispatcherInfo;
@@ -22,7 +23,11 @@ class _RecordsScreenState extends State<RecordsScreen> {
   final BookingManager _bookingManager = BookingManager();
 
   Map<String, dynamic> _tripInfo = {};
-  Map<String, dynamic> stats = {'totalPassengers': 0, 'totalCashSales': 0.0, 'totalBookingSales': 0.0};
+  Map<String, dynamic> stats = {
+    'totalPassengers': 0,
+    'totalCashSales': 0.0,
+    'totalBookingSales': 0.0
+  };
 
   @override
   void initState() {
@@ -57,22 +62,35 @@ class _RecordsScreenState extends State<RecordsScreen> {
             AppState.instance.setDriver(user);
             // Update UI
             _loadInitialData();
-            try { await sub?.cancel(); } catch (_) {}
+            try {
+              await sub?.cancel();
+            } catch (_) {}
             if (Navigator.canPop(ctx)) Navigator.pop(ctx);
             if (!completer.isCompleted) completer.complete();
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Card tapped is not a driver (role=$role). Please tap driver card.')),
-            );
+            await Dialogs.showMessage(context, 'Invalid Card',
+                'Card tapped is not a driver (role=$role). Please tap driver card.');
           }
         });
 
         return AlertDialog(
-          title: const Text('Driver required'),
+          elevation: 10,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Center(
+            child: Text(
+              'DRIVER REQUIRED',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+            ),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: const [
-              Text('Please ask the driver to tap their ID on the device to continue.'),
+              Text(
+                  'Please ask the driver to tap their ID on the device to continue.'),
               SizedBox(height: 12),
               CircularProgressIndicator(),
             ],
@@ -80,9 +98,11 @@ class _RecordsScreenState extends State<RecordsScreen> {
           actions: [
             TextButton(
               onPressed: () async {
-                try { await sub?.cancel(); } catch (_) {}
+                try {
+                  await sub?.cancel();
+                } catch (_) {}
                 if (Navigator.canPop(ctx)) Navigator.pop(ctx);
-                if (!completer.isCompleted) completer.complete();
+                if (!completer.isCompleted) completer.complete(false);
               },
               child: const Text('Cancel'),
             ),
@@ -94,8 +114,12 @@ class _RecordsScreenState extends State<RecordsScreen> {
     // Timeout to auto-close dialog after 30s
     Future.delayed(const Duration(seconds: 30)).then((_) async {
       if (!completer.isCompleted) {
-        try { await sub?.cancel(); } catch (_) {}
-        try { if (Navigator.canPop(context)) Navigator.pop(context); } catch (_) {}
+        try {
+          await sub?.cancel();
+        } catch (_) {}
+        try {
+          if (Navigator.canPop(context)) Navigator.pop(context);
+        } catch (_) {}
         completer.complete();
       }
     });
@@ -125,22 +149,30 @@ class _RecordsScreenState extends State<RecordsScreen> {
     };
 
     final bookings = _bookingManager.getBookings().toList();
-    final walkins = LocalStorage.loadWalkinsForTrip(LocalStorage.getCurrentTripId());
+    final walkins =
+        LocalStorage.loadWalkinsForTrip(LocalStorage.getCurrentTripId());
 
-    final int totalPassengersFromBookings = bookings.fold(0, (s, b) => s + (b.passengers));
-    final int totalPassengersFromWalkins = walkins.fold(0, (s, w) => s + ((w['passengers'] as int?) ?? 1));
+    final int totalPassengersFromBookings =
+        bookings.fold(0, (s, b) => s + (b.passengers));
+    final int totalPassengersFromWalkins =
+        walkins.fold(0, (s, w) => s + ((w['passengers'] as int?) ?? 1));
 
-    final double cashFromBookingsWalkins = bookings.where((b) => b.passengerUid == null).fold(0.0, (s, b) => s + b.amount) +
+    final double cashFromBookingsWalkins = bookings
+            .where((b) => b.passengerUid == null)
+            .fold(0.0, (s, b) => s + b.amount) +
         walkins.fold(0.0, (s, w) {
-      final amt = w['amount'];
-      if (amt is num) return s + amt.toDouble();
-      return s + (double.tryParse(amt?.toString() ?? '0') ?? 0.0);
-    });
+          final amt = w['amount'];
+          if (amt is num) return s + amt.toDouble();
+          return s + (double.tryParse(amt?.toString() ?? '0') ?? 0.0);
+        });
 
-    final double bookingSales = bookings.where((b) => b.passengerUid != null).fold(0.0, (s, b) => s + b.amount);
+    final double bookingSales = bookings
+        .where((b) => b.passengerUid != null)
+        .fold(0.0, (s, b) => s + b.amount);
 
     stats = {
-      'totalPassengers': totalPassengersFromBookings + totalPassengersFromWalkins,
+      'totalPassengers':
+          totalPassengersFromBookings + totalPassengersFromWalkins,
       'totalCashSales': cashFromBookingsWalkins,
       'totalBookingSales': bookingSales,
     };
@@ -158,7 +190,8 @@ class _RecordsScreenState extends State<RecordsScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.green[700],
-        title: const Text('RECORDS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text('RECORDS',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         centerTitle: true,
         automaticallyImplyLeading: false,
       ),
@@ -175,9 +208,16 @@ class _RecordsScreenState extends State<RecordsScreen> {
                   SizedBox(height: screenH * 0.01),
                   _buildKeyValueRow('Opening', 'REF-0001', screenW),
                   _buildKeyValueRow('Closing', 'REF-0001', screenW),
-                  _buildKeyValueRow('Total Passenger', stats['totalPassengers'].toString(), screenW),
-                  _buildKeyValueRow('Total Cash Sales', '₱${(stats['totalCashSales'] as double).toStringAsFixed(2)}', screenW),
-                  _buildKeyValueRow('Total Booking Sales', '₱${(stats['totalBookingSales'] as double).toStringAsFixed(2)}', screenW),
+                  _buildKeyValueRow('Total Passenger',
+                      stats['totalPassengers'].toString(), screenW),
+                  _buildKeyValueRow(
+                      'Total Cash Sales',
+                      '₱${(stats['totalCashSales'] as double).toStringAsFixed(2)}',
+                      screenW),
+                  _buildKeyValueRow(
+                      'Total Booking Sales',
+                      '₱${(stats['totalBookingSales'] as double).toStringAsFixed(2)}',
+                      screenW),
 
                   SizedBox(height: screenH * 0.01),
                   const Divider(thickness: 1.2),
@@ -185,13 +225,24 @@ class _RecordsScreenState extends State<RecordsScreen> {
 
                   _buildSectionHeader('TRIP INFORMATION'),
                   SizedBox(height: screenH * 0.01),
-                  _buildKeyValueRow('TRIP NO.', _tripInfo['tripNo'] ?? '', screenW),
-                  _buildKeyValueRow('VEHICLE NO.', _tripInfo['vehicleNo'] ?? '', screenW),
-                  _buildKeyValueRow('Conductor', _tripInfo['conductor'] ?? '', screenW),
-                  _buildKeyValueRow('Driver', _tripInfo['driver'] ?? '', screenW),
-                  _buildKeyValueRow('Dispatcher', _tripInfo['dispatcher'] ?? '', screenW),
+                  _buildKeyValueRow(
+                      'TRIP NO.', _tripInfo['tripNo'] ?? '', screenW),
+                  _buildKeyValueRow(
+                      'VEHICLE NO.', _tripInfo['vehicleNo'] ?? '', screenW),
+                  _buildKeyValueRow(
+                      'Conductor', _tripInfo['conductor'] ?? '', screenW),
+                  _buildKeyValueRow(
+                      'Driver', _tripInfo['driver'] ?? '', screenW),
+                  _buildKeyValueRow(
+                      'Dispatcher', _tripInfo['dispatcher'] ?? '', screenW),
                   _buildKeyValueRow('Route', _tripInfo['route'] ?? '', screenW),
-                  _buildKeyValueRow('No. of Inspections made', LocalStorage.loadInspectionsForTrip(LocalStorage.getCurrentTripId()).length.toString(), screenW),
+                  _buildKeyValueRow(
+                      'No. of Inspections made',
+                      LocalStorage.loadInspectionsForTrip(
+                              LocalStorage.getCurrentTripId())
+                          .length
+                          .toString(),
+                      screenW),
 
                   if (LocalStorage.isManualMode()) ...[
                     const SizedBox(height: 12),
@@ -199,7 +250,9 @@ class _RecordsScreenState extends State<RecordsScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       alignment: Alignment.center,
-                      child: const Text('--- SWITCHED TO MANUAL ---', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+                      child: const Text('--- SWITCHED TO MANUAL ---',
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, color: Colors.red)),
                     ),
                   ],
 
@@ -216,11 +269,13 @@ class _RecordsScreenState extends State<RecordsScreen> {
                             style: OutlinedButton.styleFrom(
                               backgroundColor: Colors.white,
                               side: BorderSide(color: Colors.grey[300]!),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
                             ),
                             child: const Text(
                               'BACK',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 16),
                             ),
                           ),
                         ),
@@ -233,16 +288,19 @@ class _RecordsScreenState extends State<RecordsScreen> {
                             onPressed: () async {
                               // Check if already connected to internet
                               final connectivity = Connectivity();
-                              final conn = await connectivity.checkConnectivity();
-                              
+                              final conn =
+                                  await connectivity.checkConnectivity();
+
                               // If already connected, proceed directly; otherwise show dialog
-                              bool isConnected = conn != ConnectivityResult.none;
+                              bool isConnected =
+                                  conn != ConnectivityResult.none;
                               if (!isConnected) {
                                 // Show internet connectivity dialog
                                 final result = await showDialog<bool>(
                                   context: context,
                                   barrierDismissible: false,
-                                  builder: (_) => const InternetConnectivityDialog(),
+                                  builder: (_) =>
+                                      const InternetConnectivityDialog(),
                                 );
                                 isConnected = result == true;
                               }
@@ -253,57 +311,78 @@ class _RecordsScreenState extends State<RecordsScreen> {
                               // Navigate to arrival report screen
                               final tripId = LocalStorage.getCurrentTripId();
                               // Load ONLY bookings for this trip (from LocalStorage)
-                              final bookingsForTrip = LocalStorage.loadBookingsForTrip(tripId);
-                              debugPrint('[RECORDS] Loaded ${bookingsForTrip.length} bookings for trip $tripId');
+                              final bookingsForTrip =
+                                  LocalStorage.loadBookingsForTrip(tripId);
+                              debugPrint(
+                                  '[RECORDS] Loaded ${bookingsForTrip.length} bookings for trip $tripId');
                               for (final b in bookingsForTrip) {
-                                debugPrint('[RECORDS] Booking: ${b['passengerName']} (uid: ${b['passengerUid']}, amount: ${b['amount']})');
+                                debugPrint(
+                                    '[RECORDS] Booking: ${b['passengerName']} (uid: ${b['passengerUid']}, amount: ${b['amount']})');
                               }
                               var bookings = <Booking>[];
                               for (final b in bookingsForTrip) {
                                 bookings.add(Booking(
                                   id: b['id'] ?? '',
-                                  passengerName: b['passengerName'] ?? 'Booking',
+                                  passengerName:
+                                      b['passengerName'] ?? 'Booking',
                                   route: b['route'] ?? '',
                                   date: b['date'] ?? '',
                                   time: b['time'] ?? '',
                                   passengers: b['passengers'] ?? 1,
                                   fromLocation: b['fromLocation'] ?? '',
                                   toLocation: b['toLocation'] ?? '',
-                                  passengerType: b['passengerType'] ?? 'REGULAR',
-                                  amount: (b['amount'] is num) ? (b['amount'] as num).toDouble() : double.tryParse(b['amount']?.toString() ?? '0') ?? 0.0,
+                                  passengerType:
+                                      b['passengerType'] ?? 'REGULAR',
+                                  amount: (b['amount'] is num)
+                                      ? (b['amount'] as num).toDouble()
+                                      : double.tryParse(
+                                              b['amount']?.toString() ?? '0') ??
+                                          0.0,
                                   status: b['status'] ?? 'on-board',
                                   passengerUid: b['passengerUid'],
                                 ));
                               }
                               // Add walk-in data from walkins box (current trip only)
-                              final walkins = LocalStorage.loadWalkinsForTrip(tripId);
+                              final walkins =
+                                  LocalStorage.loadWalkinsForTrip(tripId);
                               for (final walkin in walkins) {
                                 final booking = Booking(
                                   id: walkin['id'] ?? '',
-                                  passengerName: walkin['passengerName'] ?? 'Walk-in',
+                                  passengerName:
+                                      walkin['passengerName'] ?? 'Walk-in',
                                   route: walkin['route'] ?? '',
                                   date: walkin['date'] ?? '',
                                   time: walkin['time'] ?? '',
                                   passengers: walkin['passengers'] ?? 1,
                                   fromLocation: walkin['fromLocation'] ?? '',
                                   toLocation: walkin['toLocation'] ?? '',
-                                  passengerType: walkin['passengerType'] ?? 'REGULAR',
-                                  amount: (walkin['amount'] is num) ? (walkin['amount'] as num).toDouble() : double.tryParse(walkin['amount']?.toString() ?? '0') ?? 0.0,
+                                  passengerType:
+                                      walkin['passengerType'] ?? 'REGULAR',
+                                  amount: (walkin['amount'] is num)
+                                      ? (walkin['amount'] as num).toDouble()
+                                      : double.tryParse(
+                                              walkin['amount']?.toString() ??
+                                                  '0') ??
+                                          0.0,
                                   status: 'on-board',
                                   passengerUid: null,
                                 );
                                 bookings.add(booking);
                               }
                               // Load ONLY scanned tickets for this trip
-                              final scannedTickets = LocalStorage.loadScannedTicketsForTrip(tripId);
-                              final inspections = LocalStorage.loadInspectionsForTrip(tripId);
-                              
+                              final scannedTickets =
+                                  LocalStorage.loadScannedTicketsForTrip(
+                                      tripId);
+                              final inspections =
+                                  LocalStorage.loadInspectionsForTrip(tripId);
+
                               if (!mounted) return;
                               Navigator.pushReplacement(
                                 context,
                                 MaterialPageRoute(
                                   builder: (_) => ArrivalReportScreen(
-                                    tripInfo: _tripInfo.map((k, v) => MapEntry(k, v?.toString() ?? '')),
+                                    tripInfo: _tripInfo.map((k, v) =>
+                                        MapEntry(k, v?.toString() ?? '')),
                                     bookings: bookings,
                                     scannedTickets: scannedTickets,
                                     inspections: inspections,
@@ -313,11 +392,15 @@ class _RecordsScreenState extends State<RecordsScreen> {
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green[700],
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8)),
                             ),
                             child: const Text(
                               'ARRIVE',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.white),
                             ),
                           ),
                         ),
@@ -356,7 +439,10 @@ class _RecordsScreenState extends State<RecordsScreen> {
           ),
           Text(
             value,
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87),
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87),
           ),
         ],
       ),

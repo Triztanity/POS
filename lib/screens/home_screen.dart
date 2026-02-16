@@ -13,6 +13,7 @@ import '../services/device_config_service.dart';
 import '../services/nfc_reader_mode_service.dart';
 import '../local_storage.dart';
 import '../main.dart' show navigatorKey;
+import '../utils/dialogs.dart';
 
 class HomeScreen extends StatefulWidget {
   final String? routeDirection; // 'forward' or 'reverse'
@@ -35,22 +36,25 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     routeDirection = widget.routeDirection ?? 'north_to_south';
     availableStops = List.from(fareTableStops);
-    
+
     // Set from/to locations based on route direction
     if (routeDirection == 'north_to_south') {
       // North: Nasugbu → Batangas Terminal (start from Nasugbu, go up to Batangas)
       fromLocation = availableStops.first; // Nasugbu
-      toLocation = availableStops.last;    // Batangas Terminal
+      toLocation = availableStops.last; // Batangas Terminal
     } else {
       // South: Batangas Terminal → Nasugbu (start from Batangas, go down to Nasugbu)
-      fromLocation = availableStops.last;  // Batangas Terminal (but this is index 0 conceptually for south route)
-      toLocation = availableStops.first;   // Nasugbu
+      fromLocation = availableStops
+          .last; // Batangas Terminal (but this is index 0 conceptually for south route)
+      toLocation = availableStops.first; // Nasugbu
     }
 
     // Detect assigned bus for this device (BUS-001 / BUS-002)
     DeviceConfigService.getAssignedBus().then((bus) async {
       bus ??= await DeviceConfigService.autoDetectAndSaveAssignedBus();
-      if (mounted) setState(() => _assignedBus = bus);
+      if (mounted) {
+        setState(() => _assignedBus = bus);
+      }
     });
   }
 
@@ -84,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> getValidToStops() {
     int fromIndex = availableStops.indexOf(fromLocation);
     if (fromIndex == -1) return [];
-    
+
     if (routeDirection == 'north_to_south') {
       // Nasugbu → Batangas: return stops after the "From" stop (going up toward Batangas)
       return availableStops.sublist(fromIndex + 1);
@@ -133,12 +137,12 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Padding(
           padding: EdgeInsets.symmetric(
               horizontal: screenW * 0.03, vertical: vpadSmall),
-          child: SingleChildScrollView(            // ⬅⬅⬅ FIXED
+          child: SingleChildScrollView(
+            // ⬅⬅⬅ FIXED
             child: Column(
               children: [
                 _buildHeader(screenW, headerHeight),
                 SizedBox(height: vpadSmall * 2),
-
                 _buildLocationSelector(
                   label: "FROM",
                   value: fromLocation,
@@ -150,34 +154,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     toLocation = validTo.isNotEmpty ? validTo.first : '';
                   }),
                 ),
-
                 SizedBox(height: vpadSmall),
-
                 _buildLocationSelector(
                   label: "TO",
                   value: toLocation,
                   options: getValidToStops(),
                   onChanged: (v) => setState(() => toLocation = v),
                 ),
-
                 SizedBox(height: vpad),
-
                 _buildPassengerTypeSelector(screenW),
-
                 SizedBox(height: vpadSmall * 2),
-
                 _buildQrPopupButton(screenH, screenW, context),
-
                 SizedBox(height: vpadSmall),
-
                 _buildScanTicketButton(screenH, context),
-
                 SizedBox(height: vpadSmall * 2),
-
                 _buildQuantityAndTotal(screenW),
-
                 const SizedBox(height: 17),
-
                 _buildPrintButton(screenH),
               ],
             ),
@@ -200,7 +192,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Text(
               "MENU",
               style: TextStyle(
-                  color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold),
             ),
           ),
           ListTile(
@@ -209,8 +203,10 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.pop(context);
               Navigator.push(
                   context,
-                MaterialPageRoute(
-                  builder: (_) => ProfileScreen(routeInfo: getRouteDisplay(), conductor: widget.conductor)));
+                  MaterialPageRoute(
+                      builder: (_) => ProfileScreen(
+                          routeInfo: getRouteDisplay(),
+                          conductor: widget.conductor)));
             },
           ),
           ListTile(
@@ -219,7 +215,10 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.pop(context);
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (_) => HomeScreen(routeDirection: routeDirection, conductor: widget.conductor)),
+                MaterialPageRoute(
+                    builder: (_) => HomeScreen(
+                        routeDirection: routeDirection,
+                        conductor: widget.conductor)),
               );
             },
           ),
@@ -242,7 +241,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PassengersScreen(routeDirection: routeDirection),
+                  builder: (_) =>
+                      PassengersScreen(routeDirection: routeDirection),
                 ),
               );
             },
@@ -269,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
             width: screenW * 0.67,
             height: headerHeight,
             color: Colors.green[700],
-              child: Center(
+            child: Center(
               child: Text(
                 'Batman Starexpress ${_assignedBus ?? 'AFCS 1'}',
                 style: const TextStyle(
@@ -333,8 +333,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-
-
   /// QR Popup Button
   Widget _buildQrPopupButton(
       double screenH, double screenW, BuildContext context) {
@@ -377,8 +375,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Center(
                 child: Text(
                   "QR HERE",
-                  style:
-                      TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -396,19 +393,30 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ElevatedButton(
         onPressed: () async {
           if (LocalStorage.isManualMode()) {
-            showDialog(context: context, builder: (_) => AlertDialog(title: const Text('Manual Mode'), content: const Text('Device is in manual ticketing mode. Scanning is disabled.'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))]));
+            showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                        title: const Text('Manual Mode'),
+                        content: const Text(
+                            'Device is in manual ticketing mode. Scanning is disabled.'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('OK'))
+                        ]));
             return;
           }
-          
+
           // Check if driver is registered; if not, prompt for driver tap
           final driver = AppState.instance.driver;
           if (driver == null) {
             final driverTapped = await _promptForDriverTap();
             if (!driverTapped) return; // User cancelled
           }
-          
+
           // Get conductor and driver names from AppState
-          final conductorName = AppState.instance.conductor?['name'] ?? 'Unknown';
+          final conductorName =
+              AppState.instance.conductor?['name'] ?? 'Unknown';
           final driverName = AppState.instance.driver?['name'] ?? 'Unknown';
 
           final result = await Navigator.push<String>(
@@ -423,9 +431,8 @@ class _HomeScreenState extends State<HomeScreen> {
           );
 
           if (result != null && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Transaction $result completed')),
-            );
+            await Dialogs.showMessage(
+                context, 'Transaction', 'Transaction $result completed');
           }
         },
         style: ElevatedButton.styleFrom(
@@ -458,13 +465,14 @@ class _HomeScreenState extends State<HomeScreen> {
           if (role == 'driver') {
             // Register driver in global AppState
             AppState.instance.setDriver(user);
-            try { await sub?.cancel(); } catch (_) {}
+            try {
+              await sub?.cancel();
+            } catch (_) {}
             if (Navigator.canPop(ctx)) Navigator.pop(ctx);
             if (!completer.isCompleted) completer.complete(true);
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Card tapped is not a driver (role=$role). Please tap driver card.')),
-            );
+            await Dialogs.showMessage(context, 'Invalid Card',
+                'Card tapped is not a driver (role=$role). Please tap driver card.');
           }
         });
 
@@ -473,7 +481,8 @@ class _HomeScreenState extends State<HomeScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: const [
-              Text('Please ask the driver to tap their ID on the device to continue scanning.'),
+              Text(
+                  'Please ask the driver to tap their ID on the device to continue scanning.'),
               SizedBox(height: 12),
               CircularProgressIndicator(),
             ],
@@ -481,7 +490,9 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(
               onPressed: () async {
-                try { await sub?.cancel(); } catch (_) {}
+                try {
+                  await sub?.cancel();
+                } catch (_) {}
                 if (Navigator.canPop(ctx)) Navigator.pop(ctx);
                 if (!completer.isCompleted) completer.complete(false);
               },
@@ -495,15 +506,21 @@ class _HomeScreenState extends State<HomeScreen> {
     // Timeout to auto-close dialog after 30s
     Future.delayed(const Duration(seconds: 30)).then((_) async {
       if (!completer.isCompleted) {
-        try { await sub?.cancel(); } catch (_) {}
-        try { if (Navigator.canPop(context)) Navigator.pop(context); } catch (_) {}
+        try {
+          await sub?.cancel();
+        } catch (_) {}
+        try {
+          if (Navigator.canPop(context)) Navigator.pop(context);
+        } catch (_) {}
         completer.complete(false);
       }
     });
 
     final result = await completer.future;
     // stop reader mode if no longer needed
-    try { await NFCReaderModeService.instance.stop(); } catch (_) {}
+    try {
+      await NFCReaderModeService.instance.stop();
+    } catch (_) {}
     return result;
   }
 
@@ -515,7 +532,8 @@ class _HomeScreenState extends State<HomeScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('QUANTITY', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('QUANTITY',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             Container(
               width: screenW * 0.35,
@@ -545,8 +563,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold)),
             Text(
               (fare * quantity).toStringAsFixed(2),
-              style: const TextStyle(
-                  fontSize: 22, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -562,7 +579,17 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ElevatedButton(
         onPressed: () async {
           if (LocalStorage.isManualMode()) {
-            showDialog(context: context, builder: (_) => AlertDialog(title: const Text('Manual Mode'), content: const Text('Device is in manual ticketing mode. Printing is disabled.'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))]));
+            showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                        title: const Text('Manual Mode'),
+                        content: const Text(
+                            'Device is in manual ticketing mode. Printing is disabled.'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('OK'))
+                        ]));
             return;
           }
           final now = DateTime.now();
@@ -572,24 +599,25 @@ class _HomeScreenState extends State<HomeScreen> {
               "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
 
           final totalAmount = (fare * quantity).toStringAsFixed(2);
-          
+
           // Extract place names from formatted strings (km|Place)
           final originPlace = FareTable.extractPlaceName(fromLocation);
           final destPlace = FareTable.extractPlaceName(toLocation);
 
           // Get route display (just "North" or "South")
-            String routeDisplay = (routeDirection == 'north_to_south')
+          String routeDisplay = (routeDirection == 'north_to_south')
               ? 'North'
               : (routeDirection == 'south_to_north')
-                ? 'South'
-                : 'Unknown';
+                  ? 'South'
+                  : 'Unknown';
 
           // Calculate distance based on origin and destination
           String distance = _calculateDistance(originPlace, destPlace);
 
           // Get conductor name from AppState (logged-in conductor)
-          final conductorName = AppState.instance.conductor?['name'] ?? 'Unknown Conductor';
-          
+          final conductorName =
+              AppState.instance.conductor?['name'] ?? 'Unknown Conductor';
+
           // Require driver tapped in for printing
           final driver = AppState.instance.driver;
           if (driver == null) {
@@ -598,9 +626,12 @@ class _HomeScreenState extends State<HomeScreen> {
               context: context,
               builder: (_) => AlertDialog(
                 title: const Text('No Driver'),
-                content: const Text('No driver has tapped in. Please have the driver tap their card to proceed.'),
+                content: const Text(
+                    'No driver has tapped in. Please have the driver tap their card to proceed.'),
                 actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('OK')),
                 ],
               ),
             );
@@ -669,17 +700,17 @@ class _HomeScreenState extends State<HomeScreen> {
     // Get the km values from the FareTable for each place
     final originEntry = FareTable.getEntryByPlace(origin);
     final destEntry = FareTable.getEntryByPlace(destination);
-    
+
     if (originEntry != null && destEntry != null) {
       final kmTraveled = (originEntry.km - destEntry.km).abs();
-      debugPrint('[DISTANCE] $origin (${originEntry.km}km) -> $destination (${destEntry.km}km) = ${kmTraveled}km');
+      debugPrint(
+          '[DISTANCE] $origin (${originEntry.km}km) -> $destination (${destEntry.km}km) = ${kmTraveled}km');
       return kmTraveled.toString();
     }
-    
+
     debugPrint('[DISTANCE] Could not find entries for $origin or $destination');
     return '0';
   }
-
 
   /// Location Selector
   Widget _buildLocationSelector({
@@ -700,12 +731,15 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(6),
           ),
           child: Builder(builder: (_) {
-            final safeValue = options.contains(value) ? value : (options.isNotEmpty ? options.first : null);
+            final safeValue = options.contains(value)
+                ? value
+                : (options.isNotEmpty ? options.first : null);
             if (safeValue == null) {
               return Container(
                 height: 40,
                 alignment: Alignment.centerLeft,
-                child: Text('No available destinations', style: TextStyle(color: Colors.grey[600])),
+                child: Text('No available destinations',
+                    style: TextStyle(color: Colors.grey[600])),
               );
             }
             return DropdownButton<String>(
@@ -735,37 +769,46 @@ class _HomeScreenState extends State<HomeScreen> {
       barrierDismissible: false,
       builder: (dialogContext) {
         late StreamSubscription<dynamic> nfcSubscription;
-        
+
         // Set up subscription immediately when builder is called
-        nfcSubscription = NFCReaderModeService.instance.onTag.listen((data) {
+        nfcSubscription =
+            NFCReaderModeService.instance.onTag.listen((data) async {
           try {
             String tappedUid = data['uid'] ?? '';
             debugPrint('[DISPATCHER-AUTH] Tag tapped: $tappedUid');
-            
+
             final employee = LocalStorage.getEmployee(tappedUid);
             if (employee != null) {
-              debugPrint('[DISPATCHER-AUTH] Card found: ${employee['name']} (role=${employee['role']})');
+              debugPrint(
+                  '[DISPATCHER-AUTH] Card found: ${employee['name']} (role=${employee['role']})');
               if (employee['role'] == 'dispatcher') {
-                try { nfcSubscription.cancel(); } catch (_) {}
-                if (Navigator.canPop(dialogContext)) Navigator.pop(dialogContext);
-                
-                // Use global navigator key to avoid context issues
-                navigatorKey.currentState?.push(
-                  MaterialPageRoute(
-                    builder: (_) => RecordsScreen(dispatcherInfo: employee, routeDirection: routeDirection),
-                  ),
-                );
+                try {
+                  nfcSubscription.cancel();
+                } catch (_) {}
+                if (Navigator.canPop(dialogContext))
+                  Navigator.pop(dialogContext);
+
+                // Require driver tap before allowing navigation to RecordsScreen.
+                final proceed = await _requireDriverBeforeRecords(employee);
+                if (proceed) {
+                  // Use global navigator key to avoid context issues
+                  navigatorKey.currentState?.push(
+                    MaterialPageRoute(
+                      builder: (_) => RecordsScreen(
+                          dispatcherInfo: employee,
+                          routeDirection: routeDirection),
+                    ),
+                  );
+                }
                 if (!completer.isCompleted) completer.complete();
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Card is ${employee['role']}, not dispatcher')),
-                );
+                Dialogs.showMessage(context, 'Not allowed',
+                    'Card is ${employee['role']}, not dispatcher');
               }
             } else {
               debugPrint('[DISPATCHER-AUTH] Card $tappedUid NOT found');
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Dispatcher card not recognized.')),
-              );
+              Dialogs.showMessage(
+                  context, 'Not Found', 'Dispatcher card not recognized.');
             }
           } catch (e) {
             debugPrint('[DISPATCHER-AUTH] Error: $e');
@@ -775,17 +818,37 @@ class _HomeScreenState extends State<HomeScreen> {
         return PopScope(
           canPop: true,
           onPopInvokedWithResult: (didPop, result) {
-            try { nfcSubscription.cancel(); } catch (_) {}
+            try {
+              nfcSubscription.cancel();
+            } catch (_) {}
             if (!completer.isCompleted) completer.complete();
           },
           child: AlertDialog(
-            title: const Text('Dispatcher Authentication'),
-            content: const Text('Please tap your dispatcher ID card.'),
+            elevation: 10,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: Center(
+              child: Text(
+                'DISPATCHER AUTHENTICATION',
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+              ),
+            ),
+            content: const Text(
+              'Please tap your dispatcher ID card.',
+              textAlign: TextAlign.center,
+            ),
             actions: [
               TextButton(
                 onPressed: () {
-                  try { nfcSubscription.cancel(); } catch (_) {}
-                  if (Navigator.canPop(dialogContext)) Navigator.pop(dialogContext);
+                  try {
+                    nfcSubscription.cancel();
+                  } catch (_) {}
+                  if (Navigator.canPop(dialogContext))
+                    Navigator.pop(dialogContext);
                   if (!completer.isCompleted) completer.complete();
                 },
                 child: const Text('Cancel'),
@@ -796,5 +859,87 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
-}
 
+  /// Prompts for driver to tap their ID card. Returns true if a driver tapped
+  /// within the timeout/cancel window, false otherwise.
+  Future<bool> _requireDriverBeforeRecords(
+      Map<String, dynamic> dispatcherInfo) async {
+    StreamSubscription? sub;
+    final completer = Completer<bool>();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        sub ??= NFCReaderModeService.instance.onTag.listen((user) async {
+          final role = (user['role'] ?? '').toString().toLowerCase();
+          if (role == 'driver') {
+            // Register driver in global AppState
+            AppState.instance.setDriver(user);
+            // close dialog
+            try {
+              await sub?.cancel();
+            } catch (_) {}
+            if (Navigator.canPop(ctx)) Navigator.pop(ctx);
+            if (!completer.isCompleted) completer.complete(true);
+          } else {
+            // Inform invalid card tapped
+            Dialogs.showMessage(context, 'Invalid Card',
+                'Card tapped is not a driver (role=$role). Please ask the driver to tap.');
+          }
+        });
+
+        return AlertDialog(
+          elevation: 10,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: Center(
+            child: Text(
+              'DRIVER REQUIRED',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Text(
+                  'Please ask the driver to tap their ID on the device to continue.'),
+              SizedBox(height: 12),
+              CircularProgressIndicator(),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                try {
+                  await sub?.cancel();
+                } catch (_) {}
+                if (Navigator.canPop(ctx)) Navigator.pop(ctx);
+                if (!completer.isCompleted) completer.complete(false);
+              },
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+
+    // Timeout to auto-close dialog after 30s
+    Future.delayed(const Duration(seconds: 30)).then((_) async {
+      if (!completer.isCompleted) {
+        try {
+          await sub?.cancel();
+        } catch (_) {}
+        try {
+          if (Navigator.canPop(context)) Navigator.pop(context);
+        } catch (_) {}
+        completer.complete(false);
+      }
+    });
+
+    return completer.future;
+  }
+}

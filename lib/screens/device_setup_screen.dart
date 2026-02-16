@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../services/device_config_service.dart';
+import '../utils/dialogs.dart';
 
 /// Device Setup Screen - Manual fallback when auto-detect fails
 /// Allows user to select from registered devices or enter serial manually
 class DeviceSetupScreen extends StatefulWidget {
-  final VoidCallback onConfigured; // Called when device is successfully configured
+  final VoidCallback
+      onConfigured; // Called when device is successfully configured
 
   const DeviceSetupScreen({
     super.key,
@@ -34,23 +36,19 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
         await DeviceConfigService.setDeviceSerialAndBus(serial, bus);
         debugPrint('[DeviceSetup] Device configured: $serial → $bus');
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Device configured: $serial → $bus')),
-          );
+          await Dialogs.showMessage(
+              context, 'Configured', 'Device configured: $serial → $bus');
           widget.onConfigured();
         }
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Serial not found in registry')),
-          );
+          await Dialogs.showMessage(
+              context, 'Not Found', 'Serial not found in registry');
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        await Dialogs.showMessage(context, 'Error', 'Error: $e');
       }
     }
     setState(() => _isProcessing = false);
@@ -76,7 +74,8 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             ),
             const SizedBox(height: 16),
             // Registered devices list
-            const Text('Registered Devices:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Registered Devices:',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             ...registeredDevices.entries.map((e) {
               final serial = e.key;
@@ -95,14 +94,17 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             }),
             const SizedBox(height: 24),
             // Manual entry fallback
-            const Text('Or Enter Serial Manually:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Or Enter Serial Manually:',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             TextField(
               controller: _manualSerialController,
               decoration: InputDecoration(
                 hintText: 'Enter device serial (e.g., H10P746259A0982)',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
               onChanged: (val) {
                 setState(() => _selectedSerial = val.isNotEmpty ? val : null);
@@ -113,7 +115,9 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _isProcessing || _selectedSerial == null || _selectedSerial!.isEmpty
+                onPressed: _isProcessing ||
+                        _selectedSerial == null ||
+                        _selectedSerial!.isEmpty
                     ? null
                     : () => _configureDevice(_selectedSerial!),
                 style: ElevatedButton.styleFrom(
@@ -125,9 +129,11 @@ class _DeviceSetupScreenState extends State<DeviceSetupScreen> {
                     ? const SizedBox(
                         height: 20,
                         width: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
-                    : const Text('Configure Device', style: TextStyle(color: Colors.white, fontSize: 16)),
+                    : const Text('Configure Device',
+                        style: TextStyle(color: Colors.white, fontSize: 16)),
               ),
             ),
             const SizedBox(height: 16),

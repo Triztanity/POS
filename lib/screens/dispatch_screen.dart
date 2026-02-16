@@ -10,6 +10,7 @@ import 'login_screen.dart';
 import 'next_day_dispatch_screen.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'route_selection_screen.dart';
+import '../utils/dialogs.dart';
 import '../services/firebase_dispatch_service.dart';
 
 class DispatchScreen extends StatefulWidget {
@@ -51,9 +52,10 @@ class _DispatchScreenState extends State<DispatchScreen> {
     final assignedBus = await DeviceConfigService.getAssignedBus();
     if (assignedBus == null) {
       debugPrint('⚠️ Unable to determine assigned bus for this device');
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Unable to determine assigned bus.')));
+      if (mounted) {
+        await Dialogs.showMessage(
+            context, 'Error', 'Unable to determine assigned bus.');
+      }
       return;
     }
 
@@ -67,18 +69,18 @@ class _DispatchScreenState extends State<DispatchScreen> {
     } catch (e) {
       debugPrint(
           '⚠️ Failed to claim and dispatch schedule for $assignedBus: $e');
-      if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Failed to deploy: $e')));
+      if (mounted) {
+        await Dialogs.showMessage(context, 'Error', 'Failed to deploy: $e');
+      }
       return;
     }
 
     if (claimedTripId == null) {
       debugPrint('⚠️ No pre-departure schedule found for bus $assignedBus');
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content:
-                Text('No pre-departure schedule found for bus $assignedBus')));
+      if (mounted) {
+        await Dialogs.showMessage(context, 'Info',
+            'No pre-departure schedule found for bus $assignedBus');
+      }
       return;
     }
 
@@ -104,9 +106,11 @@ class _DispatchScreenState extends State<DispatchScreen> {
           route['routeId'] ?? '', route['routeName'] ?? '');
     } catch (_) {}
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('New trip deployed: $newTrip (Bus: $assignedBus)')));
+    if (!mounted) {
+      return;
+    }
+    await Dialogs.showMessage(
+        context, 'Deployed', 'New trip deployed: $newTrip (Bus: $assignedBus)');
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -144,20 +148,22 @@ class _DispatchScreenState extends State<DispatchScreen> {
               try {
                 await nfcSubscription.cancel();
               } catch (_) {}
-              if (Navigator.canPop(dialogContext)) Navigator.pop(dialogContext);
+              if (Navigator.canPop(dialogContext)) {
+                Navigator.pop(dialogContext);
+              }
 
               if (mounted) {
                 await _confirmDeployWithRoute(
                     route, employee['uid']?.toString() ?? '');
               }
-              if (!completer.isCompleted) completer.complete();
+              if (!completer.isCompleted) {
+                completer.complete();
+              }
             } else {
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                      content: Text(
-                          'Invalid card. Expected dispatcher, got ${employee?['role'] ?? 'unknown'}')),
-                );
+                Dialogs.showMessage(context, 'Invalid card',
+                    'Invalid card. Expected dispatcher, got ${employee?['role'] ?? 'unknown'}',
+                    icon: Icons.error, iconColor: Colors.red);
               }
             }
           } catch (e) {
@@ -171,21 +177,40 @@ class _DispatchScreenState extends State<DispatchScreen> {
             try {
               await nfcSubscription.cancel();
             } catch (_) {}
-            if (!completer.isCompleted) completer.complete();
+            if (!completer.isCompleted) {
+              completer.complete();
+            }
           },
           child: AlertDialog(
-            title: const Text('Dispatcher Confirmation'),
+            elevation: 10,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: Center(
+              child: Text(
+                'DISPATCHER CONFIRMATION',
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+              ),
+            ),
             content: const Text(
-                'Please tap your dispatcher ID card to confirm deploy.'),
+              'Please tap your dispatcher ID card to confirm deploy.',
+              textAlign: TextAlign.center,
+            ),
             actions: [
               TextButton(
                 onPressed: () async {
                   try {
                     await nfcSubscription.cancel();
                   } catch (_) {}
-                  if (Navigator.canPop(dialogContext))
+                  if (Navigator.canPop(dialogContext)) {
                     Navigator.pop(dialogContext);
-                  if (!completer.isCompleted) completer.complete();
+                  }
+                  if (!completer.isCompleted) {
+                    completer.complete();
+                  }
                 },
                 child: const Text('Cancel'),
               ),
@@ -378,11 +403,12 @@ class _DispatchScreenState extends State<DispatchScreen> {
                         onPressed: () async {
                           final conn = await Connectivity().checkConnectivity();
                           if (conn == ConnectivityResult.none) {
-                            if (mounted)
+                            if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                       content: Text(
                                           'Device must be online to deploy.')));
+                            }
                             return;
                           }
 
@@ -394,7 +420,9 @@ class _DispatchScreenState extends State<DispatchScreen> {
                                 builder: (_) => const RouteSelectionScreen(
                                     returnOnSelect: true)),
                           );
-                          if (selected == null) return;
+                          if (selected == null) {
+                            return;
+                          }
 
                           await _showDispatcherConfirmDialog(context, selected);
                         },

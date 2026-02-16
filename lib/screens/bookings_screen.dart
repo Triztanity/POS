@@ -4,6 +4,7 @@ import '../utils/fare_calculator.dart';
 import '../services/internet_connection_service.dart';
 import '../services/esp32_gateway_service.dart';
 import '../widgets/internet_connection_dialog.dart';
+import '../utils/dialogs.dart';
 
 class BookingsScreen extends StatefulWidget {
   const BookingsScreen({super.key});
@@ -78,8 +79,8 @@ class _BookingsScreenState extends State<BookingsScreen> {
               if (confirm == true) {
                 await _bookingManager.deleteBookingsForCurrentConductor();
                 setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Saved bookings cleared')));
+                await Dialogs.showMessage(
+                    context, 'Cleared', 'Saved bookings cleared');
               }
             },
           ),
@@ -366,9 +367,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
     } catch (e) {
       debugPrint('[Bookings] Error in drop-off: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
+        await Dialogs.showMessage(context, 'Error', 'Error: $e');
       }
     }
   }
@@ -406,12 +405,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
 
       // Send to ESP32 Gateway
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Sending to ESP32...'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        await Dialogs.showMessage(context, 'Sending', 'Sending to ESP32...');
       }
 
       final result = await _esp32Gateway.sendDropoffToESP32(
@@ -422,34 +416,18 @@ class _BookingsScreenState extends State<BookingsScreen> {
 
       if (mounted) {
         if (result['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  '✅ ${result['message'] ?? 'Successfully sent to ESP32'}'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          await Dialogs.showMessage(context, 'Success',
+              '${result['message'] ?? 'Successfully sent to ESP32'}');
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ ${result['message'] ?? 'Failed to send'}'),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 3),
-            ),
-          );
+          await Dialogs.showMessage(
+              context, 'Failed', '${result['message'] ?? 'Failed to send'}');
         }
         setState(() {});
       }
     } catch (e) {
       debugPrint('[Bookings] Error in proceed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        await Dialogs.showMessage(context, 'Error', 'Error: $e');
       }
     }
   }

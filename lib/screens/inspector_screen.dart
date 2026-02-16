@@ -9,7 +9,8 @@ import '../models/booking.dart';
 import '../utils/fare_calculator.dart';
 
 class InspectorScreen extends StatefulWidget {
-  final String routeDirection; // 'forward' or 'reverse' (north_to_south or south_to_north)
+  final String
+      routeDirection; // 'forward' or 'reverse' (north_to_south or south_to_north)
 
   const InspectorScreen({super.key, required this.routeDirection});
 
@@ -52,7 +53,7 @@ class _InspectorScreenState extends State<InspectorScreen> {
     try {
       final bookingManager = BookingManager();
       final bookings = bookingManager.getBookings();
-      
+
       // Parse route direction
       final forwardStops = FareTable.placeNamesWithKm;
       final stops = widget.routeDirection == 'north_to_south'
@@ -64,20 +65,26 @@ class _InspectorScreenState extends State<InspectorScreen> {
       final currentIdx = stops.indexOf(currentLocation);
       if (currentIdx != -1) {
         for (final booking in bookings) {
-          
           int fromIdx = -1, toIdx = -1;
           for (int i = 0; i < stops.length; i++) {
             final placeName = FareTable.extractPlaceName(stops[i]);
-            if (placeName == booking.fromLocation) fromIdx = i;
-            if (placeName == booking.toLocation) toIdx = i;
+            if (placeName == booking.fromLocation) {
+              fromIdx = i;
+            }
+            if (placeName == booking.toLocation) {
+              toIdx = i;
+            }
           }
-          
-          if (fromIdx != -1 && toIdx != -1 && fromIdx <= currentIdx && currentIdx < toIdx) {
+
+          if (fromIdx != -1 &&
+              toIdx != -1 &&
+              fromIdx <= currentIdx &&
+              currentIdx < toIdx) {
             count += booking.passengers;
           }
         }
       }
-      
+
       setState(() {
         _systemPassengerCount = count;
       });
@@ -89,9 +96,8 @@ class _InspectorScreenState extends State<InspectorScreen> {
   void _compareAndValidate() {
     final manualInput = _manualCountController.text.trim();
     if (manualInput.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the manual passenger count')),
-      );
+      _showMessageDialog(
+          'Validation', 'Please enter the manual passenger count');
       return;
     }
 
@@ -107,22 +113,15 @@ class _InspectorScreenState extends State<InspectorScreen> {
     });
 
     if (matches) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✓ Passenger count verified successfully'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      _showMessageDialog('Verified', 'Passenger count verified successfully');
     }
   }
 
   void _saveInspection() async {
     final manualInput = _manualCountController.text.trim();
     if (manualInput.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the manual passenger count')),
-      );
+      await _showMessageDialog(
+          'Validation', 'Please enter the manual passenger count');
       return;
     }
 
@@ -130,30 +129,28 @@ class _InspectorScreenState extends State<InspectorScreen> {
 
     // Validate mismatch case
     if (!_isCleared && _discrepancyResolved == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select whether the discrepancy was resolved')),
-      );
+      await _showMessageDialog(
+          'Validation', 'Please select whether the discrepancy was resolved');
       return;
     }
 
     if (_discrepancyResolved == 'Resolved' && _selectedReason == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a resolution reason')),
-      );
+      await _showMessageDialog(
+          'Validation', 'Please select a resolution reason');
       return;
     }
 
-    if (_selectedReason == 'Other' && _customExplanationController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please provide a custom explanation')),
-      );
+    if (_selectedReason == 'Other' &&
+        _customExplanationController.text.trim().isEmpty) {
+      await _showMessageDialog(
+          'Validation', 'Please provide a custom explanation');
       return;
     }
 
     // Collect NFC confirmations: inspector and conductor must both tap
     final signatures = await _collectSignatures();
     if (signatures == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signature confirmation cancelled')));
+      await _showMessageDialog('Cancelled', 'Signature confirmation cancelled');
       return;
     }
 
@@ -164,27 +161,29 @@ class _InspectorScreenState extends State<InspectorScreen> {
       busNumber: 'TBD', // TODO: Get from app state
       tripSession: widget.routeDirection,
       inspectorUid: signatures['inspector'],
-      conductorUid: signatures['conductor'] ?? AppState.instance.conductor?['uid']?.toString() ?? 'UNKNOWN',
+      conductorUid: signatures['conductor'] ??
+          AppState.instance.conductor?['uid']?.toString() ??
+          'UNKNOWN',
       driverUid: AppState.instance.driver?['uid']?.toString() ?? 'UNKNOWN',
       manualPassengerCount: manualCount,
       systemPassengerCount: _systemPassengerCount,
       isCleared: _isCleared,
       discrepancyResolved: _discrepancyResolved,
       resolutionReason: _selectedReason == 'Other' ? null : _selectedReason,
-      customExplanation: _selectedReason == 'Other' ? _customExplanationController.text.trim() : null,
-      comments: _commentsController.text.trim().isNotEmpty ? _commentsController.text.trim() : null,
+      customExplanation: _selectedReason == 'Other'
+          ? _customExplanationController.text.trim()
+          : null,
+      comments: _commentsController.text.trim().isNotEmpty
+          ? _commentsController.text.trim()
+          : null,
     );
 
     try {
       await LocalStorage.saveInspection(inspection.toMap());
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Inspection saved successfully'), backgroundColor: Colors.green),
-      );
+      await _showMessageDialog('Saved', 'Inspection saved successfully');
       Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving inspection: $e')),
-      );
+      await _showMessageDialog('Error', 'Error saving inspection: $e');
     }
   }
 
@@ -215,7 +214,10 @@ class _InspectorScreenState extends State<InspectorScreen> {
               // both present
               sub?.cancel();
               Navigator.pop(dialogContext);
-              completer.complete({'inspector': found['inspector']!, 'conductor': found['conductor']!});
+              completer.complete({
+                'inspector': found['inspector']!,
+                'conductor': found['conductor']!
+              });
             }
           });
 
@@ -224,13 +226,18 @@ class _InspectorScreenState extends State<InspectorScreen> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('Please tap the inspector card, then the conductor card on the device.'),
+                const Text(
+                    'Please tap the inspector card, then the conductor card on the device.'),
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(child: Text('Inspector: ${found['inspector'] ?? 'waiting...'}')),
+                    Expanded(
+                        child: Text(
+                            'Inspector: ${found['inspector'] ?? 'waiting...'}')),
                     const SizedBox(width: 12),
-                    Expanded(child: Text('Conductor: ${found['conductor'] ?? 'waiting...'}')),
+                    Expanded(
+                        child: Text(
+                            'Conductor: ${found['conductor'] ?? 'waiting...'}')),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -256,12 +263,31 @@ class _InspectorScreenState extends State<InspectorScreen> {
     Future.delayed(const Duration(seconds: 30)).then((_) {
       if (!completer.isCompleted) {
         sub?.cancel();
-        try { Navigator.pop(context); } catch (_) {}
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
         completer.complete(null);
       }
     });
 
     return completer.future;
+  }
+
+  Future<void> _showMessageDialog(String title, String message) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -334,7 +360,9 @@ class _InspectorScreenState extends State<InspectorScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Manual Count', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        const Text('Manual Count',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12)),
                         SizedBox(height: screenH * 0.01),
                         SizedBox(
                           height: screenH * 0.06,
@@ -343,8 +371,11 @@ class _InspectorScreenState extends State<InspectorScreen> {
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
                               hintText: 'Enter count',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                              contentPadding: EdgeInsets.symmetric(horizontal: screenW * 0.02, vertical: screenH * 0.01),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8)),
+                              contentPadding: EdgeInsets.symmetric(
+                                  horizontal: screenW * 0.02,
+                                  vertical: screenH * 0.01),
                               prefixIcon: const Icon(Icons.people),
                             ),
                           ),
@@ -387,7 +418,8 @@ class _InspectorScreenState extends State<InspectorScreen> {
                       Expanded(
                         child: Text(
                           'INSPECTION CLEARED\nPassenger count matches system record',
-                          style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                              color: Colors.green, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -410,16 +442,20 @@ class _InspectorScreenState extends State<InspectorScreen> {
                           SizedBox(width: 8),
                           Text(
                             'DISCREPANCY DETECTED',
-                            style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                color: Colors.orange,
+                                fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
                       SizedBox(height: screenH * 0.015),
-                      Text('Manual: ${_manualCountController.text} vs System: $_systemPassengerCount'),
+                      Text(
+                          'Manual: ${_manualCountController.text} vs System: $_systemPassengerCount'),
                       SizedBox(height: screenH * 0.02),
 
                       // Discrepancy resolution
-                      const Text('Was the discrepancy resolved?', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Text('Was the discrepancy resolved?',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                       SizedBox(height: screenH * 0.01),
                       Row(
                         children: [
@@ -460,21 +496,24 @@ class _InspectorScreenState extends State<InspectorScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Resolution Reason', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const Text('Resolution Reason',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
                             SizedBox(height: screenH * 0.01),
                             DropdownButtonFormField<String>(
                               initialValue: _selectedReason,
                               hint: const Text('Select reason'),
                               isExpanded: true,
                               items: _resolutionReasons
-                                  .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                                  .map((r) => DropdownMenuItem(
+                                      value: r, child: Text(r)))
                                   .toList(),
                               onChanged: (v) => setState(() {
                                 _selectedReason = v;
                                 _showCustomExplanation = v == 'Other';
                               }),
                               decoration: InputDecoration(
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8)),
                               ),
                             ),
                             SizedBox(height: screenH * 0.015),
@@ -484,14 +523,19 @@ class _InspectorScreenState extends State<InspectorScreen> {
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text('Custom Explanation', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                  const Text('Custom Explanation',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13)),
                                   SizedBox(height: screenH * 0.01),
                                   TextField(
                                     controller: _customExplanationController,
                                     maxLines: 3,
                                     decoration: InputDecoration(
                                       hintText: 'Explain the custom reason',
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                      border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8)),
                                     ),
                                   ),
                                 ],
@@ -505,14 +549,17 @@ class _InspectorScreenState extends State<InspectorScreen> {
               SizedBox(height: screenH * 0.03),
 
               // Comments section
-              const Text('Inspector Comments', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Text('Inspector Comments',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               SizedBox(height: screenH * 0.01),
               TextField(
                 controller: _commentsController,
                 maxLines: 4,
                 decoration: InputDecoration(
-                  hintText: 'Enter observations about driver, conductor, or trip',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  hintText:
+                      'Enter observations about driver, conductor, or trip',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
               SizedBox(height: screenH * 0.03),
@@ -525,9 +572,11 @@ class _InspectorScreenState extends State<InspectorScreen> {
                       onPressed: () => Navigator.pop(context),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.grey[400],
-                        padding: EdgeInsets.symmetric(vertical: screenH * 0.015),
+                        padding:
+                            EdgeInsets.symmetric(vertical: screenH * 0.015),
                       ),
-                      child: const Text('Back', style: TextStyle(color: Colors.black)),
+                      child: const Text('Back',
+                          style: TextStyle(color: Colors.black)),
                     ),
                   ),
                   SizedBox(width: screenW * 0.02),
@@ -536,9 +585,11 @@ class _InspectorScreenState extends State<InspectorScreen> {
                       onPressed: _saveInspection,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green[700],
-                        padding: EdgeInsets.symmetric(vertical: screenH * 0.015),
+                        padding:
+                            EdgeInsets.symmetric(vertical: screenH * 0.015),
                       ),
-                      child: const Text('Save Inspection', style: TextStyle(color: Colors.white)),
+                      child: const Text('Save Inspection',
+                          style: TextStyle(color: Colors.white)),
                     ),
                   ),
                 ],
