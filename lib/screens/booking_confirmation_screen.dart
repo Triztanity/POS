@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/qr_data.dart';
+import '../services/esp32_gateway_service.dart';
 import '../utils/fare_calculator.dart';
 
 /// Booking Confirmation Screen
@@ -19,7 +20,8 @@ class BookingConfirmationScreen extends StatefulWidget {
   });
 
   @override
-  State<BookingConfirmationScreen> createState() => _BookingConfirmationScreenState();
+  State<BookingConfirmationScreen> createState() =>
+      _BookingConfirmationScreenState();
 }
 
 class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
@@ -28,7 +30,13 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
   late double discountAmount;
   late double finalFare;
 
-  final List<String> passengerTypes = ['REGULAR', 'STUDENT', 'SENIOR', 'PWD', 'OTHER'];
+  final List<String> passengerTypes = [
+    'REGULAR',
+    'STUDENT',
+    'SENIOR',
+    'PWD',
+    'OTHER'
+  ];
 
   @override
   void initState() {
@@ -67,8 +75,14 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
 
     // Fallback: calculate fare via station indices when we can't map by fare value
     final calculatedFare = BookingFareCalculator.calculateFare(
-      origin: widget.qrData.origin.replaceAll(RegExp(r'^\d+\.\s*'), '').trim().toUpperCase(),
-      destination: widget.qrData.destination.replaceAll(RegExp(r'^\d+\.\s*'), '').trim().toUpperCase(),
+      origin: widget.qrData.origin
+          .replaceAll(RegExp(r'^\d+\.\s*'), '')
+          .trim()
+          .toUpperCase(),
+      destination: widget.qrData.destination
+          .replaceAll(RegExp(r'^\d+\.\s*'), '')
+          .trim()
+          .toUpperCase(),
       passengerType: selectedPassengerType,
     );
     finalFare = calculatedFare.toDouble();
@@ -120,14 +134,18 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                     children: [
                       Text(
                         'Booking Information',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.green[700]),
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green[700]),
                       ),
                       const SizedBox(height: 6),
                       _buildInfoRow('User ID:', widget.qrData.userId),
                       _buildInfoRow('Booking ID:', widget.qrData.bookingId),
                       _buildInfoRow('From:', widget.qrData.origin),
                       _buildInfoRow('To:', widget.qrData.destination),
-                      _buildInfoRow('Passengers:', '${widget.qrData.numberOfPassengers}'),
+                      _buildInfoRow(
+                          'Passengers:', '${widget.qrData.numberOfPassengers}'),
                     ],
                   ),
                 ),
@@ -185,16 +203,24 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                     children: [
                       Text(
                         'Fare Breakdown',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blue[700]),
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[700]),
                       ),
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Original Fare:', style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+                          Text('Original Fare:',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[700])),
                           Text(
                             '₱${originalFare.toStringAsFixed(2)}',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87),
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87),
                           ),
                         ],
                       ),
@@ -203,10 +229,15 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Discount/Change:', style: TextStyle(fontSize: 12, color: Colors.red[600])),
+                            Text('Discount/Change:',
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.red[600])),
                             Text(
                               '-₱${discountAmount.toStringAsFixed(2)}',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.red[600]),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.red[600]),
                             ),
                           ],
                         ),
@@ -217,10 +248,15 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Additional Charge:', style: TextStyle(fontSize: 12, color: Colors.orange[600])),
+                            Text('Additional Charge:',
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.orange[600])),
                             Text(
                               '+₱${(-discountAmount).toStringAsFixed(2)}',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.orange[600]),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange[600]),
                             ),
                           ],
                         ),
@@ -231,7 +267,11 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Final Fare:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87)),
+                          Text('Final Fare:',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87)),
                           Text(
                             '₱${finalFare.toStringAsFixed(2)}',
                             style: TextStyle(
@@ -252,7 +292,25 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                   width: double.infinity,
                   height: screenH * 0.055,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      // Send on-board status to ESP32 gateway
+                      final bookingId = widget.qrData.bookingId;
+                      final timestamp = DateTime.now().toIso8601String();
+                      try {
+                        final result =
+                            await ESP32GatewayService().sendDropoffToESP32(
+                          bookingId: bookingId,
+                          status: 'on-board',
+                          dropoffTimestamp: timestamp,
+                        );
+                        if (result['success'] == true) {
+                          // Optionally show success dialog
+                        } else {
+                          // Optionally show error dialog
+                        }
+                      } catch (e) {
+                        // Optionally show error dialog
+                      }
                       Navigator.pop(context, {
                         'passengerType': selectedPassengerType,
                         'originalFare': originalFare,
@@ -262,7 +320,8 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green[700],
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                     child: const Text(
                       'CONFIRM & PRINT TICKET',
@@ -285,7 +344,8 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                     onPressed: () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: Colors.red[300]!),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                     child: Text(
                       'CANCEL',
@@ -317,13 +377,19 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
             width: 90,
             child: Text(
               label,
-              style: TextStyle(fontSize: 11, color: Colors.grey[600], fontWeight: FontWeight.w500),
+              style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500),
             ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                  fontSize: 11,
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w600),
               overflow: TextOverflow.ellipsis,
             ),
           ),

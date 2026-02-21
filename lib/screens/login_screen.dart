@@ -6,6 +6,7 @@ import '../services/app_state.dart';
 import '../models/booking.dart';
 import 'home_screen.dart';
 import '../utils/dialogs.dart';
+import '../widgets/esp32_connection_dialog.dart';
 // route_selection_screen removed from post-login flow
 
 class LoginScreen extends StatefulWidget {
@@ -105,20 +106,50 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    try {
+    // Sequence: driver tap → ESP32 dialog → home screen
+    Future<void> promptDriverTap() async {
+      setState(() {
+        _status = 'Conductor logged in. Driver, please tap your ID.';
+      });
+      await for (final driver in NFCReaderModeService.instance.onTag) {
+        final role = (driver['role'] ?? '').toString().toLowerCase();
+        if (role == 'driver') {
+          AppState.instance.setDriver(driver);
+          LocalStorage.saveCurrentDriver(driver);
+          debugPrint(
+              '[LOGIN] Driver detected, proceeding to ESP32 connection dialog');
+          break;
+        }
+      }
+    }
+
+    Future<void> showEsp32Dialog() async {
+      final connected = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => Esp32ConnectionDialog(),
+      );
+      if (connected != true) {
+        setState(() {
+          _status = 'ESP32 connection failed. Please retry.';
+        });
+        return;
+      }
+    }
+
+    Future<void> proceedLoginFlow() async {
+      await promptDriverTap();
+      await showEsp32Dialog();
+
       debugPrint('[LOGIN] navigating to HomeScreen (no route chooser)');
-      // Prefer persisted route if present, otherwise default to north_to_south
       final curRoute = LocalStorage.getCurrentRoute();
       String routeDirection = 'north_to_south';
       if (curRoute != null) {
         final rid = curRoute['routeId'];
         if (rid == 'south_to_north') routeDirection = 'south_to_north';
       }
-
-      // Persist last screen as home with chosen routeDirection
       LocalStorage.saveLastScreen(
           'home_screen', {'routeDirection': routeDirection});
-
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -126,18 +157,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 HomeScreen(routeDirection: routeDirection, conductor: user)),
       );
       debugPrint('[LOGIN] Navigator.pushReplacement to HomeScreen succeeded');
-    } catch (e) {
-      debugPrint('[LOGIN] ERROR during Navigator.pushReplacement: $e');
-    }
-
-    if (mounted) {
-      try {
-        Dialogs.showMessage(context, 'Welcome', 'Welcome, $name!');
-        debugPrint('[LOGIN] dialog shown');
-      } catch (e) {
-        debugPrint('[LOGIN] error showing dialog: $e');
+      if (mounted) {
+        try {
+          Dialogs.showMessage(context, 'Welcome', 'Welcome, $name!');
+          debugPrint('[LOGIN] dialog shown');
+        } catch (e) {
+          debugPrint('[LOGIN] error showing dialog: $e');
+        }
       }
     }
+
+    proceedLoginFlow();
   }
 
   Future<void> _loginManual() async {
