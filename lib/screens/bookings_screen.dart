@@ -55,36 +55,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         centerTitle: true,
-        actions: [
-          IconButton(
-            tooltip: 'Clear saved bookings',
-            icon: const Icon(Icons.delete_forever),
-            onPressed: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Delete saved bookings'),
-                  content: const Text(
-                      'This will remove all saved bookings and scanned QR records for the current conductor. Continue?'),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(false),
-                        child: const Text('Cancel')),
-                    TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(true),
-                        child: const Text('Delete')),
-                  ],
-                ),
-              );
-              if (confirm == true) {
-                await _bookingManager.deleteBookingsForCurrentConductor();
-                setState(() {});
-                await Dialogs.showMessage(
-                    context, 'Cleared', 'Saved bookings cleared');
-              }
-            },
-          ),
-        ],
+        actions: [],
       ),
       body: SafeArea(
         child: Padding(
