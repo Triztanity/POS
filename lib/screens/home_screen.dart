@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'profile_screen.dart';
 import 'bookings_screen.dart';
 import 'records_screen.dart';
@@ -50,17 +51,62 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // Detect assigned bus for this device (BUS-001 / BUS-002)
-    DeviceConfigService.getAssignedBus().then((bus) async {
-      bus ??= await DeviceConfigService.autoDetectAndSaveAssignedBus();
+    // Re-detect every launch; if successful it overwrites any stale cache
+    DeviceConfigService.autoDetectAndSaveAssignedBus().then((detected) async {
+      final bus = detected ?? await DeviceConfigService.getAssignedBus();
       if (mounted) {
         setState(() => _assignedBus = bus);
+      }
+      // Fetch the active schedule's routeId from Firestore to set correct direction
+      if (bus != null) {
+        try {
+          final query = await FirebaseFirestore.instance
+              .collection('schedules')
+              .where('busNumber', isEqualTo: bus)
+              .where('status', isEqualTo: 'departed')
+              .orderBy('dispatchTime', descending: true)
+              .limit(1)
+              .get();
+          if (query.docs.isNotEmpty && mounted) {
+            final data = query.docs.first.data();
+            // Parse route directly: "X to Y" → FROM=X, TO=Y
+            final routeStr = (data['route'] ?? data['routeName'] ?? '').toString();
+            final parts = routeStr.split(RegExp(r'\s+to\s+', caseSensitive: false));
+            if (parts.length == 2) {
+              final fromCity = parts[0].trim().toLowerCase();
+              final toCity = parts[1].trim().toLowerCase();
+              // Determine direction based on the parsed route
+              String newDirection;
+              if (fromCity.startsWith('nasugbu')) {
+                newDirection = 'north_to_south';
+              } else {
+                newDirection = 'south_to_north';
+              }
+              setState(() {
+                routeDirection = newDirection;
+                // Find matching stops for FROM
+                final fromMatch = availableStops.cast<String?>().firstWhere(
+                    (s) => s != null && FareTable.extractPlaceName(s).toLowerCase().startsWith(fromCity),
+                    orElse: () => null);
+                // Find matching stops for TO
+                final toMatch = availableStops.cast<String?>().firstWhere(
+                    (s) => s != null && FareTable.extractPlaceName(s).toLowerCase().startsWith(toCity),
+                    orElse: () => null);
+                if (fromMatch != null) fromLocation = fromMatch;
+                if (toMatch != null) toLocation = toMatch;
+              });
+            }
+          }
+        } catch (e) {
+          debugPrint('[HomeScreen] Error fetching active schedule route: $e');
+        }
       }
     });
   }
 
   String? _assignedBus;
 
-  String passengerType = 'REGULAR';
+  String? passengerType;
 
   final List<String> passengerTypes = [
     'REGULAR',
@@ -111,7 +157,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return FareCalculator.calculateFare(
       origin: originPlace,
       destination: destPlace,
-      passengerType: passengerType,
+      passengerType: passengerType ?? 'REGULAR',
       quantity: 1,
     ).toDouble();
   }
@@ -316,13 +362,17 @@ class _HomeScreenState extends State<HomeScreen> {
           width: screenW * 0.45,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.black54),
+            border: Border.all(
+              color: passengerType == null ? Colors.red : Colors.black54,
+            ),
             borderRadius: BorderRadius.circular(6),
           ),
           child: DropdownButton<String>(
             isExpanded: true,
             underline: const SizedBox(),
             value: passengerType,
+            hint: const Text('Select Type',
+                style: TextStyle(color: Colors.grey)),
             items: passengerTypes
                 .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                 .toList(),
@@ -578,6 +628,20 @@ class _HomeScreenState extends State<HomeScreen> {
       height: screenH * 0.065,
       child: ElevatedButton(
         onPressed: () async {
+          if (passengerType == null) {
+            showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                        title: const Text('Select Passenger Type'),
+                        content: const Text(
+                            'Please select a passenger type before printing a ticket.'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('OK'))
+                        ]));
+            return;
+          }
           if (LocalStorage.isManualMode()) {
             showDialog(
                 context: context,
@@ -646,13 +710,13 @@ class _HomeScreenState extends State<HomeScreen> {
           debugPrint('[RECEIPT] From: $originPlace, To: $destPlace');
 
           await printer.printReceipt(
-            vehicleNo: "BUS-002",
+            vehicleNo: _assignedBus ?? 'BUS-001',
             date: date,
             time: time,
             from: originPlace,
             to: destPlace,
             distance: distance,
-            passengerType: passengerType,
+            passengerType: passengerType!,
             driverName: driverName,
             conductorName: conductorName,
             payment: "CASH",
@@ -671,7 +735,7 @@ class _HomeScreenState extends State<HomeScreen> {
             'passengers': quantity,
             'fromLocation': originPlace,
             'toLocation': destPlace,
-            'passengerType': passengerType,
+            'passengerType': passengerType!,
             'amount': amountDouble,
             'source': 'walkin',
           };
@@ -680,9 +744,11 @@ class _HomeScreenState extends State<HomeScreen> {
           } catch (e) {
             debugPrint('[HomeScreen] Failed saving walkin: $e');
           }
+          setState(() => passengerType = null);
         },
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green[700],
+          backgroundColor:
+              passengerType == null ? Colors.grey : Colors.green[700],
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),

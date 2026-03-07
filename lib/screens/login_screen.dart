@@ -143,11 +143,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       debugPrint('[LOGIN] navigating to HomeScreen (no route chooser)');
       final curRoute = LocalStorage.getCurrentRoute();
-      String routeDirection = 'north_to_south';
-      if (curRoute != null) {
-        final rid = curRoute['routeId'];
-        if (rid == 'south_to_north') routeDirection = 'south_to_north';
-      }
+      String routeDirection = _routeDirectionFromRoute(curRoute);
       LocalStorage.saveLastScreen(
           'home_screen', {'routeDirection': routeDirection});
       Navigator.pushReplacement(
@@ -223,18 +219,35 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (_) {}
 
     // Save default route and navigate directly to HomeScreen
+    final curRoute = LocalStorage.getCurrentRoute();
+    String routeDirection = _routeDirectionFromRoute(curRoute);
     LocalStorage.saveLastScreen(
-        'home_screen', {'routeDirection': 'north_to_south'});
+        'home_screen', {'routeDirection': routeDirection});
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
           builder: (_) =>
-              HomeScreen(routeDirection: 'north_to_south', conductor: match)),
+              HomeScreen(routeDirection: routeDirection, conductor: match)),
     );
     if (mounted) {
       await Dialogs.showMessage(
           context, 'Welcome', 'Welcome, ${match['name']}!');
     }
+  }
+
+  /// Determine route direction from stored route data by parsing routeName
+  String _routeDirectionFromRoute(Map<String, String>? curRoute) {
+    if (curRoute != null) {
+      // First try routeId
+      final rid = curRoute['routeId'] ?? '';
+      if (rid == 'south_to_north') return 'south_to_north';
+      if (rid == 'north_to_south') return 'north_to_south';
+      // Fallback: parse routeName (e.g. "Batangas to Nasugbu")
+      final rname = (curRoute['routeName'] ?? '').toLowerCase();
+      if (rname.startsWith('batangas')) return 'south_to_north';
+      if (rname.startsWith('nasugbu')) return 'north_to_south';
+    }
+    return 'north_to_south';
   }
 
   @override

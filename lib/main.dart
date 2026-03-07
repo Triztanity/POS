@@ -38,6 +38,8 @@ void main() async {
 
   // Attempt to auto-detect device and persist assigned bus (must run before UI)
   try {
+    // Clear any stale bus assignment so auto-detect can set the correct one
+    await DeviceConfigService.clearAssignment();
     final assigned = await DeviceConfigService.autoDetectAndSaveAssignedBus();
     if (assigned != null) {
       debugPrint('Device assigned bus detected: $assigned');

@@ -19,10 +19,8 @@ class DeviceConfigService {
     'H10P746259A0982': 'BUS-002',
     'H10P74625AU0044': 'BUS-001',
     // Android IDs (strong identifier for these devices)
-    'ca04c9993ebc9f65': 'BUS-002', // androidId for H10P746259A0982
-    'e48d8154b4dc3378': 'BUS-001', // androidId for H10P74625AU0044
-    // Model prefixes as fallback (less specific - use with caution in multi-device scenarios)
-    'H10': 'BUS-001', // Default H10 model → BUS-001 (fallback)
+    'e9fb9c8908a3cb9f': 'BUS-002', // androidId for H10P746259A0982
+    '2590ecaf10bb2b56': 'BUS-001', // androidId for BUS-001 device
   };
 
   /// Open config box if not open
@@ -57,6 +55,15 @@ class DeviceConfigService {
     await box.put(_assignedBusKey, bus);
   }
 
+  /// Clear cached bus assignment (used before re-detection)
+  static Future<void> clearAssignment() async {
+    try {
+      final box = await _openBox();
+      await box.delete(_assignedBusKey);
+      await box.delete(_deviceSerialKey);
+    } catch (_) {}
+  }
+
   /// Returns true if the serial exists in registry
   static bool isRegisteredSerial(String serial) {
     return _deviceRegistry.containsKey(serial);
@@ -78,41 +85,32 @@ class DeviceConfigService {
       final ids = await DeviceIdentifierService.getDeviceIdentifiers();
       if (ids != null) {
         debugPrint('[DeviceConfig] Native identifiers: $ids');
-        final candidates = <String>[];
-        if (ids['serial'] != null && ids['serial']!.isNotEmpty) candidates.add(ids['serial']!);
-        if (ids['androidId'] != null && ids['androidId']!.isNotEmpty) candidates.add(ids['androidId']!);
-        if (ids['model'] != null && ids['model']!.isNotEmpty) candidates.add(ids['model']!);
 
-        debugPrint('[DeviceConfig] Candidates from native: $candidates');
-
-        for (final c in candidates) {
-          final norm = _normalize(c);
-          debugPrint('[DeviceConfig] Trying candidate: "$c" (normalized: "$norm")');
-          
-          // Try direct and normalized matches first
-          for (final key in _deviceRegistry.keys) {
-            final normKey = _normalize(key);
-            // Multi-level matching: exact, normalized, substring, startswith
-            final isMatch = c == key || 
-                           norm == normKey || 
-                           c.contains(key) || 
-                           key.contains(c) ||
-                           norm.contains(normKey) || 
-                           normKey.contains(norm) ||
-                           c.startsWith(key) ||
-                           key.startsWith(c) ||
-                           norm.startsWith(normKey) ||
-                           normKey.startsWith(norm);
-            
-            if (isMatch) {
-              final bus = _deviceRegistry[key]!;
-              debugPrint('[DeviceConfig] ✓ Match found: "$c" → Registry key "$key" → Bus "$bus"');
-              await setDeviceSerialAndBus(key, bus);
-              return bus;
-            }
+        // Priority 1: Exact serial match
+        final serial = ids['serial'];
+        if (serial != null && serial.isNotEmpty) {
+          debugPrint('[DeviceConfig] Trying exact serial: "$serial"');
+          if (_deviceRegistry.containsKey(serial)) {
+            final bus = _deviceRegistry[serial]!;
+            debugPrint('[DeviceConfig] ✓ Exact serial match: "$serial" → "$bus"');
+            await setDeviceSerialAndBus(serial, bus);
+            return bus;
           }
-          debugPrint('[DeviceConfig] No match for candidate "$c"');
         }
+
+        // Priority 2: Exact androidId match
+        final androidId = ids['androidId'];
+        if (androidId != null && androidId.isNotEmpty) {
+          debugPrint('[DeviceConfig] Trying exact androidId: "$androidId"');
+          if (_deviceRegistry.containsKey(androidId)) {
+            final bus = _deviceRegistry[androidId]!;
+            debugPrint('[DeviceConfig] ✓ Exact androidId match: "$androidId" → "$bus"');
+            await setDeviceSerialAndBus(androidId, bus);
+            return bus;
+          }
+        }
+
+        debugPrint('[DeviceConfig] No match for native identifiers');
       } else {
         debugPrint('[DeviceConfig] Native identifiers returned null');
       }
