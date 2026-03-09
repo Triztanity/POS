@@ -271,7 +271,8 @@ class _PassengersScreenState extends State<PassengersScreen> with WidgetsBinding
 
   /// Build dropdown items for current location with OVERVIEW at top and filtered stops
   List<DropdownMenuItem<String>> _buildLocationDropdownItems() {
-    // Always show OVERVIEW followed by all route stops in travel order.
+    // Always show OVERVIEW followed by route stops.
+    // When a location is selected, hide stops that have already been passed.
     final items = <DropdownMenuItem<String>>[];
     items.add(
       const DropdownMenuItem(
@@ -280,11 +281,20 @@ class _PassengersScreenState extends State<PassengersScreen> with WidgetsBinding
       ),
     );
 
-    for (final stop in stops) {
+    // Determine which stops to show
+    final int startIdx;
+    if (currentLocation == null || currentLocation == 'OVERVIEW') {
+      startIdx = 0; // Show all stops
+    } else {
+      final selectedIdx = stops.indexOf(currentLocation!);
+      startIdx = selectedIdx == -1 ? 0 : selectedIdx;
+    }
+
+    for (int i = startIdx; i < stops.length; i++) {
       items.add(
         DropdownMenuItem(
-          value: stop,
-          child: Text(stop, style: const TextStyle(fontSize: 13)),
+          value: stops[i],
+          child: Text(stops[i], style: const TextStyle(fontSize: 13)),
         ),
       );
     }

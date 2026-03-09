@@ -25,10 +25,10 @@ class BookingConfirmationScreen extends StatefulWidget {
 }
 
 class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
-  late String selectedPassengerType;
+  String? selectedPassengerType;
   late double originalFare;
-  late double discountAmount;
-  late double finalFare;
+  double discountAmount = 0;
+  double finalFare = 0;
 
   final List<String> passengerTypes = [
     'REGULAR',
@@ -41,12 +41,12 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
   @override
   void initState() {
     super.initState();
-    selectedPassengerType = 'REGULAR';
     originalFare = widget.qrData.fareAmount;
-    _updateFare();
+    finalFare = originalFare;
   }
 
   void _updateFare() {
+    if (selectedPassengerType == null) return;
     // Use the QR code's fare as the reference (original fare) when possible.
     // This finds the fare table entry that matches the QR `fare` and derives
     // the discounted fare for non-regular passenger types. Falls back to
@@ -64,7 +64,7 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
 
     if (fareEntry != null) {
       originalFare = qrFare;
-      if (selectedPassengerType.toUpperCase() == 'REGULAR') {
+      if (selectedPassengerType!.toUpperCase() == 'REGULAR') {
         finalFare = originalFare;
       } else {
         finalFare = fareEntry.discount.toDouble();
@@ -83,7 +83,7 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
           .replaceAll(RegExp(r'^\d+\.\s*'), '')
           .trim()
           .toUpperCase(),
-      passengerType: selectedPassengerType,
+      passengerType: selectedPassengerType!,
     );
     finalFare = calculatedFare.toDouble();
     // Keep originalFare as the QR fare if present, otherwise use calculated
@@ -164,13 +164,17 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                 Container(
                   padding: EdgeInsets.symmetric(horizontal: screenW * 0.02),
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.black54),
+                    border: Border.all(
+                      color: selectedPassengerType == null ? Colors.red : Colors.black54,
+                    ),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: DropdownButton<String>(
                     isExpanded: true,
                     underline: const SizedBox(),
                     value: selectedPassengerType,
+                    hint: const Text('Select Type',
+                        style: TextStyle(color: Colors.grey)),
                     items: passengerTypes
                         .map((type) => DropdownMenuItem(
                               value: type,
@@ -292,7 +296,9 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                   width: double.infinity,
                   height: screenH * 0.055,
                   child: ElevatedButton(
-                    onPressed: () async {
+                    onPressed: selectedPassengerType == null
+                        ? null
+                        : () async {
                       // Send on-board status to ESP32 gateway
                       final bookingId = widget.qrData.bookingId;
                       final timestamp = DateTime.now().toIso8601String();
@@ -312,7 +318,7 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                         // Optionally show error dialog
                       }
                       Navigator.pop(context, {
-                        'passengerType': selectedPassengerType,
+                        'passengerType': selectedPassengerType!,
                         'originalFare': originalFare,
                         'discountAmount': discountAmount,
                         'finalFare': finalFare,

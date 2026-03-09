@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../local_storage.dart';
 import '../models/booking.dart';
@@ -9,7 +10,6 @@ import '../services/nfc_reader_mode_service.dart';
 import 'login_screen.dart';
 import 'dispatch_screen.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'route_selection_screen.dart';
 import '../utils/dialogs.dart';
 import '../services/firebase_dispatch_service.dart';
 
@@ -23,7 +23,10 @@ class NextDayDispatchScreen extends StatefulWidget {
 class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
   late String currentTripId;
 
-  String? _assignedBus;
+  Map<String, dynamic>? _nextSchedule;
+  bool _loadingSchedule = true;
+  StreamSubscription<QuerySnapshot>? _scheduleSubscription;
+  bool _isLocked = false;
 
   @override
   void initState() {
@@ -31,20 +34,71 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
     // Persist that app is on this screen so it will restore here on restart
     LocalStorage.saveLastScreen('next_day_dispatch_screen', {});
     currentTripId = LocalStorage.getCurrentTripId();
-    _loadAssignedBus();
+    _listenNextSchedule();
   }
 
-  Future<void> _loadAssignedBus() async {
+  @override
+  void dispose() {
+    _scheduleSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _listenNextSchedule() async {
     try {
-      final b = await DeviceConfigService.getAssignedBus();
-      if (mounted) {
-        setState(() => _assignedBus = b ?? LocalStorage.getCurrentVehicleNo());
+      var bus = await DeviceConfigService.getAssignedBus();
+      bus ??= await DeviceConfigService.autoDetectAndSaveAssignedBus();
+      if (bus == null) {
+        if (mounted) setState(() => _loadingSchedule = false);
+        return;
       }
-    } catch (_) {
-      if (mounted) {
-        setState(() => _assignedBus = LocalStorage.getCurrentVehicleNo());
-      }
+      _scheduleSubscription = FirebaseFirestore.instance
+          .collection('schedules')
+          .where('busNumber', isEqualTo: bus)
+          .where('status', isEqualTo: 'pre-departure')
+          .limit(1)
+          .snapshots()
+          .listen((snapshot) {
+        if (!mounted) return;
+        if (snapshot.docs.isNotEmpty) {
+          setState(() {
+            _nextSchedule = snapshot.docs.first.data();
+            _loadingSchedule = false;
+          });
+        } else {
+          setState(() {
+            _nextSchedule = null;
+            _loadingSchedule = false;
+          });
+        }
+      }, onError: (e) {
+        debugPrint('[NextDayDispatch] Schedule listener error: $e');
+        if (mounted) setState(() => _loadingSchedule = false);
+      });
+    } catch (e) {
+      debugPrint('[NextDayDispatch] Error setting up schedule listener: $e');
+      if (mounted) setState(() => _loadingSchedule = false);
     }
+  }
+
+  String _getRouteFromSchedule(Map<String, dynamic> schedule) {
+    final route = schedule['routeName']?.toString();
+    if (route != null && route.isNotEmpty) return route;
+    final routeId = schedule['routeId']?.toString() ?? '';
+    if (routeId.contains('north')) return 'Nasugbu to Batangas';
+    if (routeId.contains('south')) return 'Batangas to Nasugbu';
+    return 'Not assigned';
+  }
+
+  String _getScheduledTime(Map<String, dynamic> schedule) {
+    final time = schedule['scheduledTime'];
+    if (time is Timestamp) {
+      final dt = time.toDate();
+      final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+      final amPm = dt.hour >= 12 ? 'PM' : 'AM';
+      return '${hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} $amPm';
+    }
+    if (time is String && time.isNotEmpty) return time;
+    return 'Not set';
   }
 
   Future<void> _confirmDeployWithRoute(
@@ -218,15 +272,123 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
     await completer.future;
   }
 
+  Future<void> _toggleLockWithDispatcher() async {
+    NFCReaderModeService.instance.resetDebounce();
+    final completer = Completer<void>();
+    final action = _isLocked ? 'UNLOCK' : 'LOCK';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        late StreamSubscription<dynamic> nfcSubscription;
+        nfcSubscription =
+            NFCReaderModeService.instance.onTag.listen((data) async {
+          try {
+            final tappedUid = data['uid']?.toString() ?? '';
+            final employee = LocalStorage.getEmployee(tappedUid);
+            if (employee != null && (employee['role'] ?? '') == 'dispatcher') {
+              try {
+                await nfcSubscription.cancel();
+              } catch (_) {}
+              if (Navigator.canPop(dialogContext)) {
+                Navigator.pop(dialogContext);
+              }
+              if (mounted) {
+                setState(() => _isLocked = !_isLocked);
+              }
+              if (!completer.isCompleted) {
+                completer.complete();
+              }
+            } else {
+              if (mounted) {
+                Dialogs.showMessage(context, 'Invalid card',
+                    'Invalid card. Expected dispatcher, got ${employee?['role'] ?? 'unknown'}',
+                    icon: Icons.error, iconColor: Colors.red);
+              }
+            }
+          } catch (e) {
+            debugPrint('[LOCK-TOGGLE] Error: $e');
+          }
+        });
+
+        return PopScope(
+          canPop: true,
+          onPopInvokedWithResult: (didPop, result) async {
+            try {
+              await nfcSubscription.cancel();
+            } catch (_) {}
+            if (!completer.isCompleted) {
+              completer.complete();
+            }
+          },
+          child: AlertDialog(
+            elevation: 10,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            title: Center(
+              child: Text(
+                '$action SCREEN',
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+              ),
+            ),
+            content: Text(
+              'Please tap your dispatcher ID card to $action.',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  try {
+                    await nfcSubscription.cancel();
+                  } catch (_) {}
+                  if (Navigator.canPop(dialogContext)) {
+                    Navigator.pop(dialogContext);
+                  }
+                  if (!completer.isCompleted) {
+                    completer.complete();
+                  }
+                },
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    await completer.future;
+  }
+
   @override
   Widget build(BuildContext context) {
     // walkins/inspections not displayed on this screen
 
-    return Scaffold(
+    return PopScope(
+      canPop: !_isLocked,
+      child: Scaffold(
       appBar: AppBar(
-        title: const Text('Dispatch (Next Day)'),
+        title: const Text('First Trip'),
         centerTitle: true,
         backgroundColor: Colors.green[800],
+        automaticallyImplyLeading: false,
+        leading: _isLocked
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () async {
+                  await LocalStorage.clearLastScreen();
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const DispatchScreen()),
+                  );
+                },
+              ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -237,34 +399,43 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
               children: [
                 const SizedBox(height: 8),
                 Center(
-                  child: Column(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.green[50],
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 6)
-                          ],
-                        ),
-                        padding: const EdgeInsets.all(18),
-                        child: Icon(Icons.directions_bus,
-                            size: 56, color: Colors.green[800]),
-                      ),
-                      const SizedBox(height: 12),
-                      Text('Next-Day Dispatch',
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineSmall
-                              ?.copyWith(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 6),
-                      if (_assignedBus != null)
-                        Text('Vehicle: ${_assignedBus!}',
-                            style: TextStyle(color: Colors.grey[700])),
-                    ],
-                  ),
+                  child: _loadingSchedule
+                      ? const CircularProgressIndicator()
+                      : _nextSchedule != null
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text('CURRENT SCHEDULE',
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black54)),
+                                const SizedBox(height: 12),
+                                Text(
+                                  _nextSchedule!['route']?.toString() ??
+                                      _getRouteFromSchedule(_nextSchedule!),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green[800],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _getScheduledTime(_nextSchedule!),
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : const Text('No\nUpcoming\nSchedule',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  fontSize: 28, color: Colors.black54)),
                 ),
                 const SizedBox(height: 18),
                 Card(
@@ -341,42 +512,54 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
                   onPressed: () async {
                     final conn = await Connectivity().checkConnectivity();
                     if (conn == ConnectivityResult.none) {
-                      if (mounted)
+                      if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                                 content:
                                     Text('Device must be online to deploy.')));
+                      }
                       return;
                     }
 
-                    final selected = await Navigator.push<Map<String, String>>(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) =>
-                              const RouteSelectionScreen(returnOnSelect: true)),
-                    );
-                    if (selected == null) return;
+                    if (_nextSchedule == null) {
+                      if (mounted) {
+                        await Dialogs.showMessage(context, 'No Schedule',
+                            'No upcoming schedule found to deploy.');
+                      }
+                      return;
+                    }
 
-                    await _showDispatcherConfirmDialog(context, selected);
+                    // Auto-select route from the Firebase schedule
+                    final route = <String, String>{
+                      'routeId':
+                          _nextSchedule!['routeId']?.toString() ?? '',
+                      'routeName':
+                          _nextSchedule!['route']?.toString() ??
+                              _nextSchedule!['routeName']?.toString() ??
+                              '',
+                    };
+
+                    await _showDispatcherConfirmDialog(context, route);
                   },
                 ),
                 const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () async {
-                    // Navigate back to Dispatch screen and clear last-screen marker
-                    await LocalStorage.clearLastScreen();
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (_) => const DispatchScreen()),
-                    );
-                  },
-                  child: const Text('Return'),
+                ElevatedButton(
+                  onPressed: () => _toggleLockWithDispatcher(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _isLocked ? Colors.orange : Colors.grey[700],
+                    padding: const EdgeInsets.symmetric(vertical: 14.0),
+                  ),
+                  child: Text(_isLocked ? 'Unlock' : 'Lock',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.white)),
                 ),
               ],
             ),
           ),
         ),
       ),
-    );
+    ));
   }
 }

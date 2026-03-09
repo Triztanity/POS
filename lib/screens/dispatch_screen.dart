@@ -10,7 +10,6 @@ import '../services/nfc_reader_mode_service.dart';
 import 'login_screen.dart';
 import 'next_day_dispatch_screen.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'route_selection_screen.dart';
 import '../utils/dialogs.dart';
 import '../services/firebase_dispatch_service.dart';
 
@@ -297,13 +296,6 @@ class _DispatchScreenState extends State<DispatchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final walkins = LocalStorage.loadWalkinsForTrip(currentTripId);
-    final inspections = LocalStorage.loadInspectionsForTrip(currentTripId);
-    final bookingTickets = _bookingManager
-        .getBookings()
-        .where((b) => b.passengerUid != null)
-        .length;
-    final allTickets = bookingTickets + walkins.length;
 
     return PopScope(
       canPop: false,

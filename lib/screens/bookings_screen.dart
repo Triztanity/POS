@@ -374,6 +374,9 @@ class _BookingsScreenState extends State<BookingsScreen> {
       booking.dropoffTimestamp = DateTime.now().toString();
       _bookingManager.updateBooking(booking);
 
+      // Immediately refresh UI to reflect dropped-off status
+      if (mounted) setState(() {});
+
       // Send to ESP32 Gateway
       if (mounted) {
         await Dialogs.showMessage(context, 'Sending', 'Sending to ESP32...');
