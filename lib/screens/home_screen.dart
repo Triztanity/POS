@@ -302,36 +302,43 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildHeader(screenW, headerHeight),
               SizedBox(height: vpadSmall),
-              _buildActiveBookingsPanel(screenW, screenH, context),
-              SizedBox(height: vpadSmall),
-              _buildLocationSelector(
-                label: "FROM",
-                value: fromLocation,
-                options: getValidFromStops(),
-                onChanged: (v) => setState(() {
-                  fromLocation = v;
-                  // Always reset "To" to the first valid destination
-                  List<String> validTo = getValidToStops();
-                  toLocation = validTo.isNotEmpty ? validTo.first : '';
-                }),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildLocationSelector(
+                      label: "FROM",
+                      value: fromLocation,
+                      options: getValidFromStops(),
+                      onChanged: (v) => setState(() {
+                        fromLocation = v;
+                        // Always reset "To" to the first valid destination
+                        List<String> validTo = getValidToStops();
+                        toLocation = validTo.isNotEmpty ? validTo.first : '';
+                      }),
+                    ),
+                    SizedBox(height: vpadSmall),
+                    _buildLocationSelector(
+                      label: "TO",
+                      value: toLocation,
+                      options: getValidToStops(),
+                      onChanged: (v) => setState(() => toLocation = v),
+                    ),
+                    SizedBox(height: vpad),
+                    _buildPassengerTypeSelector(screenW),
+                    SizedBox(height: vpadSmall),
+                    _buildQrPopupButton(screenH, screenW, context),
+                    SizedBox(height: vpadSmall),
+                    _buildBookingsInWaitingButton(screenH, screenW, context),
+                    SizedBox(height: vpadSmall),
+                    _buildScanTicketButton(screenH, context),
+                    SizedBox(height: vpadSmall),
+                    _buildQuantityAndTotal(screenW),
+                    Spacer(),
+                    _buildPrintButton(screenH),
+                  ],
+                ),
               ),
-              SizedBox(height: vpadSmall),
-              _buildLocationSelector(
-                label: "TO",
-                value: toLocation,
-                options: getValidToStops(),
-                onChanged: (v) => setState(() => toLocation = v),
-              ),
-              SizedBox(height: vpad),
-              _buildPassengerTypeSelector(screenW),
-              SizedBox(height: vpadSmall),
-              _buildQrPopupButton(screenH, screenW, context),
-              SizedBox(height: vpadSmall),
-              _buildScanTicketButton(screenH, context),
-              SizedBox(height: vpadSmall),
-              _buildQuantityAndTotal(screenW),
-              SizedBox(height: vpadSmall),
-              _buildPrintButton(screenH),
             ],
           ),
         ),
@@ -684,6 +691,57 @@ class _HomeScreenState extends State<HomeScreen> {
                   "QR HERE",
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// BOOKINGS IN WAITING Button
+  Widget _buildBookingsInWaitingButton(
+      double screenH, double screenW, BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: screenH * 0.056,
+      child: OutlinedButton(
+        onPressed: () => _showBookingsDialog(context, screenW, screenH),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: Colors.green.shade700),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.list_alt, color: Colors.green[700]),
+            const SizedBox(width: 8),
+            const Text(
+              'BOOKINGS IN WAITING',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBookingsDialog(BuildContext context, double screenW, double screenH) {
+    showDialog(
+      context: context,
+      builder: (_) {
+        return Dialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: screenW * 0.95,
+              maxHeight: screenH * 0.8,
+            ),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: _buildActiveBookingsPanel(screenW, screenH, context),
               ),
             ),
           ),
