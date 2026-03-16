@@ -142,6 +142,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
     }
 
     final newTrip = claimedTripId;
+
     await LocalStorage.setCurrentTripId(newTrip);
     await LocalStorage.setCurrentVehicleNo(assignedBus);
     await LocalStorage.resetTripState(newTrip);
@@ -369,197 +370,199 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
     // walkins/inspections not displayed on this screen
 
     return PopScope(
-      canPop: !_isLocked,
-      child: Scaffold(
-      appBar: AppBar(
-        title: const Text('First Trip'),
-        centerTitle: true,
-        backgroundColor: Colors.green[800],
-        automaticallyImplyLeading: false,
-        leading: _isLocked
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () async {
-                  await LocalStorage.clearLastScreen();
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const DispatchScreen()),
-                  );
-                },
-              ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 8),
-                Center(
-                  child: _loadingSchedule
-                      ? const CircularProgressIndicator()
-                      : _nextSchedule != null
-                          ? Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text('CURRENT SCHEDULE',
-                                    style: TextStyle(
-                                        fontSize: 14,
+        canPop: !_isLocked,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('First Trip'),
+            centerTitle: true,
+            backgroundColor: Colors.green[800],
+            automaticallyImplyLeading: false,
+            leading: _isLocked
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () async {
+                      await LocalStorage.clearLastScreen();
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const DispatchScreen()),
+                      );
+                    },
+                  ),
+          ),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 8),
+                    Center(
+                      child: _loadingSchedule
+                          ? const CircularProgressIndicator()
+                          : _nextSchedule != null
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('CURRENT SCHEDULE',
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.black54)),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      _nextSchedule!['route']?.toString() ??
+                                          _getRouteFromSchedule(_nextSchedule!),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 28,
                                         fontWeight: FontWeight.bold,
-                                        color: Colors.black54)),
-                                const SizedBox(height: 12),
-                                Text(
-                                  _nextSchedule!['route']?.toString() ??
-                                      _getRouteFromSchedule(_nextSchedule!),
+                                        color: Colors.green[800],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _getScheduledTime(_nextSchedule!),
+                                      style: const TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : const Text('No\nUpcoming\nSchedule',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green[800],
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  _getScheduledTime(_nextSchedule!),
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ],
-                            )
-                          : const Text('No\nUpcoming\nSchedule',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 28, color: Colors.black54)),
-                ),
-                const SizedBox(height: 18),
-                Card(
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Next-Day Checklist',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: const [
-                            Icon(Icons.battery_charging_full,
-                                size: 18, color: Colors.green),
-                            SizedBox(width: 8),
-                            Expanded(
-                                child: Text(
-                                    'Charge the device fully before leaving')),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: const [
-                            Icon(Icons.print, size: 18, color: Colors.blue),
-                            SizedBox(width: 8),
-                            Expanded(
-                                child: Text('Ensure printer paper is stocked')),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: const [
-                            Icon(Icons.wifi, size: 18, color: Colors.indigo),
-                            SizedBox(width: 8),
-                            Expanded(
-                                child: Text(
-                                    'Confirm arrival reports have been uploaded (when online)')),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: const [
-                            Icon(Icons.checklist_rtl,
-                                size: 18, color: Colors.teal),
-                            SizedBox(width: 8),
-                            Expanded(
-                                child: Text(
-                                    'Keep this screen open if your shift has ended')),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                      ],
+                                      fontSize: 28, color: Colors.black54)),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Padding(
-                    padding:
-                        EdgeInsets.symmetric(vertical: 14.0, horizontal: 8.0),
-                    child: Text('Deploy',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.white)),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color.fromRGBO(255, 0, 0, 1)),
-                  onPressed: () async {
-                    final conn = await Connectivity().checkConnectivity();
-                    if (conn == ConnectivityResult.none) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content:
-                                    Text('Device must be online to deploy.')));
-                      }
-                      return;
-                    }
+                    const SizedBox(height: 18),
+                    Card(
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Next-Day Checklist',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: const [
+                                Icon(Icons.battery_charging_full,
+                                    size: 18, color: Colors.green),
+                                SizedBox(width: 8),
+                                Expanded(
+                                    child: Text(
+                                        'Charge the device fully before leaving')),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: const [
+                                Icon(Icons.print, size: 18, color: Colors.blue),
+                                SizedBox(width: 8),
+                                Expanded(
+                                    child: Text(
+                                        'Ensure printer paper is stocked')),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: const [
+                                Icon(Icons.wifi,
+                                    size: 18, color: Colors.indigo),
+                                SizedBox(width: 8),
+                                Expanded(
+                                    child: Text(
+                                        'Confirm arrival reports have been uploaded (when online)')),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: const [
+                                Icon(Icons.checklist_rtl,
+                                    size: 18, color: Colors.teal),
+                                SizedBox(width: 8),
+                                Expanded(
+                                    child: Text(
+                                        'Keep this screen open if your shift has ended')),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Padding(
+                        padding: EdgeInsets.symmetric(
+                            vertical: 14.0, horizontal: 8.0),
+                        child: Text('Deploy',
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: Colors.white)),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color.fromRGBO(255, 0, 0, 1)),
+                      onPressed: () async {
+                        final conn = await Connectivity().checkConnectivity();
+                        if (conn == ConnectivityResult.none) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        'Device must be online to deploy.')));
+                          }
+                          return;
+                        }
 
-                    if (_nextSchedule == null) {
-                      if (mounted) {
-                        await Dialogs.showMessage(context, 'No Schedule',
-                            'No upcoming schedule found to deploy.');
-                      }
-                      return;
-                    }
+                        if (_nextSchedule == null) {
+                          if (mounted) {
+                            await Dialogs.showMessage(context, 'No Schedule',
+                                'No upcoming schedule found to deploy.');
+                          }
+                          return;
+                        }
 
-                    // Auto-select route from the Firebase schedule
-                    final route = <String, String>{
-                      'routeId':
-                          _nextSchedule!['routeId']?.toString() ?? '',
-                      'routeName':
-                          _nextSchedule!['route']?.toString() ??
+                        // Auto-select route from the Firebase schedule
+                        final route = <String, String>{
+                          'routeId':
+                              _nextSchedule!['routeId']?.toString() ?? '',
+                          'routeName': _nextSchedule!['route']?.toString() ??
                               _nextSchedule!['routeName']?.toString() ??
                               '',
-                    };
+                        };
 
-                    await _showDispatcherConfirmDialog(context, route);
-                  },
+                        await _showDispatcherConfirmDialog(context, route);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: () => _toggleLockWithDispatcher(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            _isLocked ? Colors.orange : Colors.grey[700],
+                        padding: const EdgeInsets.symmetric(vertical: 14.0),
+                      ),
+                      child: Text(_isLocked ? 'Unlock' : 'Lock',
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.white)),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: () => _toggleLockWithDispatcher(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _isLocked ? Colors.orange : Colors.grey[700],
-                    padding: const EdgeInsets.symmetric(vertical: 14.0),
-                  ),
-                  child: Text(_isLocked ? 'Unlock' : 'Lock',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Colors.white)),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
-    ));
+        ));
   }
 }

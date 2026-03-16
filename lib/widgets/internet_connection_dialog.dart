@@ -35,7 +35,7 @@ class _InternetConnectionDialogState extends State<InternetConnectionDialog> {
       if (isConnected && mounted) {
         setState(() {
           _isConnected = true;
-          _statusMessage = '✓ Connected to ESP32 gateway';
+          _statusMessage = '✓ Connected to network';
         });
       }
     });
@@ -53,9 +53,9 @@ class _InternetConnectionDialogState extends State<InternetConnectionDialog> {
       setState(() {
         _isConnected = isConnected;
         if (isConnected) {
-          _statusMessage = '✓ Connected to ESP32 gateway';
+          _statusMessage = '✓ Connected to network';
         } else {
-          _statusMessage = 'Not connected to ESP32 gateway';
+          _statusMessage = 'Not connected to network';
         }
       });
     } catch (e) {
@@ -110,7 +110,7 @@ class _InternetConnectionDialogState extends State<InternetConnectionDialog> {
             ),
             const SizedBox(height: 16),
             const Text(
-              'ESP32 Gateway Required',
+              'Network Connection Required',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -154,7 +154,7 @@ class _InternetConnectionDialogState extends State<InternetConnectionDialog> {
                 border: Border.all(color: Colors.blue[200]!),
               ),
               child: const Text(
-                'ESP32 WiFi Hotspot',
+                'Available WiFi Network',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
@@ -216,7 +216,7 @@ class _InternetConnectionDialogState extends State<InternetConnectionDialog> {
 
               // Info message
               Text(
-                'Connect to ESP32 hotspot via WiFi settings and return here.',
+                'Connect to a network via WiFi settings and return here.',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey[600],

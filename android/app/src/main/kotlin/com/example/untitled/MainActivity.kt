@@ -1,16 +1,23 @@
 package com.batmanstarexpress.afcs
 
+import android.Manifest
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.nfc.NfcAdapter
 import android.nfc.Tag
 import android.os.Bundle
+import android.provider.Telephony
+import android.telephony.SmsManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
   companion object {
@@ -18,12 +25,16 @@ class MainActivity : FlutterActivity() {
     private const val CHANNEL = "com.example.untitled/nfc"
     private const val EVENT_CHANNEL = "com.example.untitled/nfc_tags"
     private const val DEVICE_CHANNEL = "com.example.untitled/device"
+    private const val SMS_EVENT_CHANNEL = "com.example.untitled/sms_alerts"
+    private const val SMS_SEND_CHANNEL = "com.example.untitled/sms_sender"
   }
 
   private lateinit var methodChannel: MethodChannel
   private var eventSink: EventChannel.EventSink? = null
+  private var smsEventSink: EventChannel.EventSink? = null
   private var nfcAdapter: NfcAdapter? = null
   private var readerCallback: NfcAdapter.ReaderCallback? = null
+  private var smsReceiver: BroadcastReceiver? = null
 
   override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
@@ -97,6 +108,37 @@ class MainActivity : FlutterActivity() {
           }
         })
 
+    EventChannel(flutterEngine.dartExecutor.binaryMessenger, SMS_EVENT_CHANNEL)
+        .setStreamHandler(object : EventChannel.StreamHandler {
+          override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+            smsEventSink = events
+            registerSmsReceiver()
+            Log.d(TAG, "SMS EventChannel listener attached")
+          }
+
+          override fun onCancel(arguments: Any?) {
+            smsEventSink = null
+            unregisterSmsReceiver()
+            Log.d(TAG, "SMS EventChannel listener detached")
+          }
+        })
+
+    MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SMS_SEND_CHANNEL)
+        .setMethodCallHandler { call, result ->
+          when (call.method) {
+            "sendSms" -> {
+              val phoneNumber = call.argument<String>("phoneNumber") ?: ""
+              val message = call.argument<String>("message") ?: ""
+              if (phoneNumber.isBlank() || message.isBlank()) {
+                result.error("SMS_ARGS", "phoneNumber/message is required", null)
+                return@setMethodCallHandler
+              }
+              sendSms(phoneNumber, message, result)
+            }
+            else -> result.notImplemented()
+          }
+        }
+
     nfcAdapter = NfcAdapter.getDefaultAdapter(this)
     if (nfcAdapter == null) {
       Log.e(TAG, "NFC not supported on this device")
@@ -150,6 +192,83 @@ class MainActivity : FlutterActivity() {
     }
   }
 
+  private fun registerSmsReceiver() {
+    if (smsReceiver != null) return
+
+    smsReceiver = object : BroadcastReceiver() {
+      override fun onReceive(context: Context?, intent: Intent?) {
+        if (intent?.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+
+        try {
+          val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+          if (messages.isEmpty()) return
+
+          val sender = messages.firstOrNull()?.displayOriginatingAddress ?: "unknown"
+          val body = messages.joinToString(separator = "") { it.messageBody ?: "" }
+          val timestamp = messages.firstOrNull()?.timestampMillis ?: System.currentTimeMillis()
+
+          val payload = mapOf(
+            "sender" to sender,
+            "body" to body,
+            "timestamp" to timestamp
+          )
+
+          runOnUiThread {
+            try {
+              smsEventSink?.success(payload)
+            } catch (e: Exception) {
+              Log.e(TAG, "Error sending SMS event to Flutter: ${e.message}")
+            }
+          }
+        } catch (e: Exception) {
+          Log.e(TAG, "Error parsing incoming SMS: ${e.message}")
+        }
+      }
+    }
+
+    try {
+      val filter = IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION)
+      registerReceiver(smsReceiver, filter)
+      Log.d(TAG, "SMS receiver registered")
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to register SMS receiver: ${e.message}")
+    }
+  }
+
+  private fun unregisterSmsReceiver() {
+    try {
+      if (smsReceiver != null) {
+        unregisterReceiver(smsReceiver)
+        smsReceiver = null
+        Log.d(TAG, "SMS receiver unregistered")
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Failed to unregister SMS receiver: ${e.message}")
+      smsReceiver = null
+    }
+  }
+
+  private fun sendSms(phoneNumber: String, message: String, result: MethodChannel.Result) {
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) !=
+        PackageManager.PERMISSION_GRANTED) {
+      result.error("SMS_PERMISSION", "SEND_SMS permission not granted", null)
+      return
+    }
+
+    try {
+      val smsManager = SmsManager.getDefault()
+      val parts = smsManager.divideMessage(message)
+      if (parts.size > 1) {
+        smsManager.sendMultipartTextMessage(phoneNumber, null, parts, null, null)
+      } else {
+        smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+      }
+      result.success(true)
+    } catch (e: Exception) {
+      result.error("SMS_SEND_FAILED", e.message, null)
+    }
+  }
+
   override fun onResume() {
     super.onResume()
     enableNfcReaderMode()
@@ -158,5 +277,10 @@ class MainActivity : FlutterActivity() {
   override fun onPause() {
     disableNfcReaderMode()
     super.onPause()
+  }
+
+  override fun onDestroy() {
+    unregisterSmsReceiver()
+    super.onDestroy()
   }
 }

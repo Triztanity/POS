@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'profile_screen.dart';
 import 'bookings_screen.dart';
 import 'records_screen.dart';
+import 'booking_alerts_screen.dart';
 import 'package:senraise_printer/senraise_printer.dart';
 import 'package:untitled/screens/qr_scanner_screen.dart';
 import 'passengers_screen.dart';
@@ -12,6 +13,7 @@ import 'package:untitled/utils/stops.dart';
 import '../services/app_state.dart';
 import '../services/device_config_service.dart';
 import '../services/nfc_reader_mode_service.dart';
+import '../services/sms_booking_alert_service.dart';
 import '../local_storage.dart';
 import '../main.dart' show navigatorKey;
 import '../utils/dialogs.dart';
@@ -31,6 +33,9 @@ class _HomeScreenState extends State<HomeScreen> {
   late String toLocation;
   late String routeDirection; // 'forward' or 'reverse'
   late List<String> availableStops;
+  final SmsBookingAlertService _smsAlertService = SmsBookingAlertService();
+  StreamSubscription<Map<String, dynamic>>? _bookingAlertSub;
+  List<Map<String, dynamic>> _activeBookingAlerts = [];
 
   @override
   void initState() {
@@ -70,8 +75,10 @@ class _HomeScreenState extends State<HomeScreen> {
           if (query.docs.isNotEmpty && mounted) {
             final data = query.docs.first.data();
             // Parse route directly: "X to Y" → FROM=X, TO=Y
-            final routeStr = (data['route'] ?? data['routeName'] ?? '').toString();
-            final parts = routeStr.split(RegExp(r'\s+to\s+', caseSensitive: false));
+            final routeStr =
+                (data['route'] ?? data['routeName'] ?? '').toString();
+            final parts =
+                routeStr.split(RegExp(r'\s+to\s+', caseSensitive: false));
             if (parts.length == 2) {
               final fromCity = parts[0].trim().toLowerCase();
               final toCity = parts[1].trim().toLowerCase();
@@ -86,11 +93,19 @@ class _HomeScreenState extends State<HomeScreen> {
                 routeDirection = newDirection;
                 // Find matching stops for FROM
                 final fromMatch = availableStops.cast<String?>().firstWhere(
-                    (s) => s != null && FareTable.extractPlaceName(s).toLowerCase().startsWith(fromCity),
+                    (s) =>
+                        s != null &&
+                        FareTable.extractPlaceName(s)
+                            .toLowerCase()
+                            .startsWith(fromCity),
                     orElse: () => null);
                 // Find matching stops for TO
                 final toMatch = availableStops.cast<String?>().firstWhere(
-                    (s) => s != null && FareTable.extractPlaceName(s).toLowerCase().startsWith(toCity),
+                    (s) =>
+                        s != null &&
+                        FareTable.extractPlaceName(s)
+                            .toLowerCase()
+                            .startsWith(toCity),
                     orElse: () => null);
                 if (fromMatch != null) fromLocation = fromMatch;
                 if (toMatch != null) toLocation = toMatch;
@@ -102,6 +117,106 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     });
+
+    _initActiveBookingAlerts();
+  }
+
+  Future<void> _initActiveBookingAlerts() async {
+    await _smsAlertService.startListening();
+    final stored = await _smsAlertService.getStoredAlerts();
+    if (!mounted) return;
+
+    setState(() {
+      _activeBookingAlerts = _normalizeActiveBookingAlerts(stored);
+    });
+
+    await _bookingAlertSub?.cancel();
+    _bookingAlertSub = _smsAlertService.alertsStream.listen((_) async {
+      final latest = await _smsAlertService.getStoredAlerts();
+      if (!mounted) return;
+      setState(() {
+        _activeBookingAlerts = _normalizeActiveBookingAlerts(latest);
+      });
+    });
+  }
+
+  List<Map<String, dynamic>> _normalizeActiveBookingAlerts(
+      List<Map<String, dynamic>> alerts) {
+    final sorted = List<Map<String, dynamic>>.from(alerts)
+      ..sort((a, b) => ((b['receivedAtMs'] as int?) ?? 0)
+          .compareTo((a['receivedAtMs'] as int?) ?? 0));
+
+    // Keep latest event per booking first so status transitions such as
+    // waiting -> on-board can correctly hide stale waiting entries.
+    final latestByBooking = <String, Map<String, dynamic>>{};
+    final withoutBookingId = <Map<String, dynamic>>[];
+    for (final item in sorted) {
+      final bookingId = (item['bookingId'] ?? '').toString().trim();
+      if (bookingId.isNotEmpty) {
+        latestByBooking.putIfAbsent(bookingId, () => item);
+      } else {
+        withoutBookingId.add(item);
+      }
+    }
+
+    final list = <Map<String, dynamic>>[];
+
+    for (final item in latestByBooking.values) {
+      final origin = (item['origin'] ?? '').toString().trim();
+      final seats = int.tryParse((item['seats'] ?? '').toString()) ?? 0;
+      final status = (item['status'] ?? '').toString().trim().toLowerCase();
+
+      if (origin.isEmpty || seats <= 0) continue;
+      if (status.isNotEmpty && status != 'waiting') continue;
+      list.add(item);
+    }
+
+    // Keep legacy/no-bookingId waiting alerts compatible.
+    for (final item in withoutBookingId) {
+      final origin = (item['origin'] ?? '').toString().trim();
+      final seats = int.tryParse((item['seats'] ?? '').toString()) ?? 0;
+      final status = (item['status'] ?? '').toString().trim().toLowerCase();
+      if (origin.isEmpty || seats <= 0) continue;
+      if (status.isNotEmpty && status != 'waiting') continue;
+      list.add(item);
+    }
+
+    final descendingStation = routeDirection == 'south_to_north';
+    list.sort((a, b) {
+      final stationA = _extractStationNumber(a);
+      final stationB = _extractStationNumber(b);
+
+      if (stationA >= 0 && stationB >= 0 && stationA != stationB) {
+        return descendingStation
+            ? stationB.compareTo(stationA)
+            : stationA.compareTo(stationB);
+      }
+
+      // Fallback to most recent if station cannot be compared.
+      return ((b['receivedAtMs'] as int?) ?? 0)
+          .compareTo((a['receivedAtMs'] as int?) ?? 0);
+    });
+
+    return list.take(2).toList();
+  }
+
+  int _extractStationNumber(Map<String, dynamic> item) {
+    final stationRaw = (item['station'] ?? '').toString().trim();
+    final fromStation = int.tryParse(stationRaw);
+    if (fromStation != null) return fromStation;
+
+    final origin = (item['origin'] ?? '').toString().trim();
+    final match = RegExp(r'^(\d+)\s*\.').firstMatch(origin);
+    if (match != null) {
+      return int.tryParse(match.group(1) ?? '') ?? -1;
+    }
+    return -1;
+  }
+
+  @override
+  void dispose() {
+    _bookingAlertSub?.cancel();
+    super.dispose();
   }
 
   String? _assignedBus;
@@ -172,9 +287,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final screenH = mq.size.height;
     final screenW = mq.size.width;
 
-    final double vpadSmall = screenH * 0.01;
-    final double vpad = screenH * 0.02;
-    final double headerHeight = screenH * 0.08;
+    final double vpadSmall = screenH * 0.006;
+    final double vpad = screenH * 0.012;
+    final double headerHeight = screenH * 0.07;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -183,42 +298,41 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Padding(
           padding: EdgeInsets.symmetric(
               horizontal: screenW * 0.03, vertical: vpadSmall),
-          child: SingleChildScrollView(
-            // ⬅⬅⬅ FIXED
-            child: Column(
-              children: [
-                _buildHeader(screenW, headerHeight),
-                SizedBox(height: vpadSmall * 2),
-                _buildLocationSelector(
-                  label: "FROM",
-                  value: fromLocation,
-                  options: getValidFromStops(),
-                  onChanged: (v) => setState(() {
-                    fromLocation = v;
-                    // Always reset "To" to the first valid destination
-                    List<String> validTo = getValidToStops();
-                    toLocation = validTo.isNotEmpty ? validTo.first : '';
-                  }),
-                ),
-                SizedBox(height: vpadSmall),
-                _buildLocationSelector(
-                  label: "TO",
-                  value: toLocation,
-                  options: getValidToStops(),
-                  onChanged: (v) => setState(() => toLocation = v),
-                ),
-                SizedBox(height: vpad),
-                _buildPassengerTypeSelector(screenW),
-                SizedBox(height: vpadSmall * 2),
-                _buildQrPopupButton(screenH, screenW, context),
-                SizedBox(height: vpadSmall),
-                _buildScanTicketButton(screenH, context),
-                SizedBox(height: vpadSmall * 2),
-                _buildQuantityAndTotal(screenW),
-                const SizedBox(height: 17),
-                _buildPrintButton(screenH),
-              ],
-            ),
+          child: Column(
+            children: [
+              _buildHeader(screenW, headerHeight),
+              SizedBox(height: vpadSmall),
+              _buildActiveBookingsPanel(screenW, screenH, context),
+              SizedBox(height: vpadSmall),
+              _buildLocationSelector(
+                label: "FROM",
+                value: fromLocation,
+                options: getValidFromStops(),
+                onChanged: (v) => setState(() {
+                  fromLocation = v;
+                  // Always reset "To" to the first valid destination
+                  List<String> validTo = getValidToStops();
+                  toLocation = validTo.isNotEmpty ? validTo.first : '';
+                }),
+              ),
+              SizedBox(height: vpadSmall),
+              _buildLocationSelector(
+                label: "TO",
+                value: toLocation,
+                options: getValidToStops(),
+                onChanged: (v) => setState(() => toLocation = v),
+              ),
+              SizedBox(height: vpad),
+              _buildPassengerTypeSelector(screenW),
+              SizedBox(height: vpadSmall),
+              _buildQrPopupButton(screenH, screenW, context),
+              SizedBox(height: vpadSmall),
+              _buildScanTicketButton(screenH, context),
+              SizedBox(height: vpadSmall),
+              _buildQuantityAndTotal(screenW),
+              SizedBox(height: vpadSmall),
+              _buildPrintButton(screenH),
+            ],
           ),
         ),
       ),
@@ -281,6 +395,18 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
           ListTile(
+            title: const Text("BOOKING ALERTS"),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const BookingAlertsScreen(),
+                ),
+              );
+            },
+          ),
+          ListTile(
             title: const Text("PASSENGERS"),
             onTap: () {
               Navigator.pop(context);
@@ -317,7 +443,7 @@ class _HomeScreenState extends State<HomeScreen> {
             color: Colors.green[700],
             child: Center(
               child: Text(
-                'Batman Starexpress ${_assignedBus ?? 'AFCS 1'}',
+                'Batman Starexpress',
                 style: const TextStyle(
                     color: Colors.white,
                     fontSize: 17,
@@ -351,6 +477,138 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildActiveBookingsPanel(
+      double screenW, double screenH, BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(screenW * 0.03),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F5E9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.green.shade400, width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.directions_bus, color: Colors.green[800], size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'ACTIVE WAITING BOOKINGS',
+                style: TextStyle(
+                  color: Colors.green[900],
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const BookingAlertsScreen(),
+                    ),
+                  );
+                },
+                child: const Text('VIEW ALL'),
+              ),
+            ],
+          ),
+          if (_activeBookingAlerts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'No active booking alerts yet.',
+                style: TextStyle(color: Colors.grey[700], fontSize: 13),
+              ),
+            )
+          else
+            ..._activeBookingAlerts.map((item) {
+              final origin = (item['origin'] ?? 'Unknown origin').toString();
+              final seats = (item['seats'] ?? 0).toString();
+              final station = (item['station'] ?? '').toString().trim();
+              final bookingId = (item['bookingId'] ?? '').toString().trim();
+
+              return Container(
+                margin: EdgeInsets.only(top: screenH * 0.007),
+                padding: EdgeInsets.symmetric(
+                  horizontal: screenW * 0.03,
+                  vertical: screenH * 0.008,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            origin,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (bookingId.isNotEmpty)
+                            Text(
+                              'ID: $bookingId',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (station.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade100,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(
+                          'STN $station',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.orange.shade900,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade100,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        '$seats seat${seats == '1' ? '' : 's'}',
+                        style: TextStyle(
+                          color: Colors.green.shade900,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
   /// Passenger Type UI
   Widget _buildPassengerTypeSelector(double screenW) {
     return Row(
@@ -371,8 +629,8 @@ class _HomeScreenState extends State<HomeScreen> {
             isExpanded: true,
             underline: const SizedBox(),
             value: passengerType,
-            hint: const Text('Select Type',
-                style: TextStyle(color: Colors.grey)),
+            hint:
+                const Text('Select Type', style: TextStyle(color: Colors.grey)),
             items: passengerTypes
                 .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                 .toList(),
@@ -386,20 +644,19 @@ class _HomeScreenState extends State<HomeScreen> {
   /// QR Popup Button
   Widget _buildQrPopupButton(
       double screenH, double screenW, BuildContext context) {
-    return GestureDetector(
-      onTap: () => _showQrPopup(context),
-      child: Container(
-        height: screenH * 0.16,
-        width: screenW * 0.6,
-        decoration: BoxDecoration(
-          color: Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(6),
+    return SizedBox(
+      width: double.infinity,
+      height: screenH * 0.056,
+      child: OutlinedButton.icon(
+        onPressed: () => _showQrPopup(context),
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: Colors.green.shade700),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
-        child: const Center(
-          child: Text(
-            'TAP TO VIEW QR',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
+        icon: Icon(Icons.qr_code, color: Colors.green[700]),
+        label: const Text(
+          'TAP TO VIEW QR',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
         ),
       ),
     );

@@ -11,6 +11,7 @@ class DeviceConfigService {
   static const _boxName = 'device_config';
   static const _deviceSerialKey = 'deviceSerial';
   static const _assignedBusKey = 'assignedBus';
+  static const _piGatewayBaseUrlKey = 'piGatewayBaseUrl';
 
   // Maintain the registry here. Map device identifiers to bus assignments.
   // Key can be: full serial (preferred), model prefix, or androidId
@@ -55,6 +56,20 @@ class DeviceConfigService {
     await box.put(_assignedBusKey, bus);
   }
 
+  static Future<String?> getPiGatewayBaseUrl() async {
+    try {
+      final box = await _openBox();
+      return box.get(_piGatewayBaseUrlKey) as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> setPiGatewayBaseUrl(String baseUrl) async {
+    final box = await _openBox();
+    await box.put(_piGatewayBaseUrlKey, baseUrl.trim());
+  }
+
   /// Clear cached bus assignment (used before re-detection)
   static Future<void> clearAssignment() async {
     try {
@@ -79,7 +94,7 @@ class DeviceConfigService {
   /// Returns the assigned bus if found, null otherwise.
   static Future<String?> autoDetectAndSaveAssignedBus() async {
     debugPrint('[DeviceConfig] Starting auto-detect...');
-    
+
     // 1) Try native identifiers
     try {
       final ids = await DeviceIdentifierService.getDeviceIdentifiers();
@@ -92,7 +107,8 @@ class DeviceConfigService {
           debugPrint('[DeviceConfig] Trying exact serial: "$serial"');
           if (_deviceRegistry.containsKey(serial)) {
             final bus = _deviceRegistry[serial]!;
-            debugPrint('[DeviceConfig] ✓ Exact serial match: "$serial" → "$bus"');
+            debugPrint(
+                '[DeviceConfig] ✓ Exact serial match: "$serial" → "$bus"');
             await setDeviceSerialAndBus(serial, bus);
             return bus;
           }
@@ -104,7 +120,8 @@ class DeviceConfigService {
           debugPrint('[DeviceConfig] Trying exact androidId: "$androidId"');
           if (_deviceRegistry.containsKey(androidId)) {
             final bus = _deviceRegistry[androidId]!;
-            debugPrint('[DeviceConfig] ✓ Exact androidId match: "$androidId" → "$bus"');
+            debugPrint(
+                '[DeviceConfig] ✓ Exact androidId match: "$androidId" → "$bus"');
             await setDeviceSerialAndBus(androidId, bus);
             return bus;
           }
@@ -137,7 +154,8 @@ class DeviceConfigService {
       debugPrint('[DeviceConfig] Printer service error: $e');
     }
 
-    debugPrint('[DeviceConfig] ✗ No match found. Available devices: ${_deviceRegistry.keys.toList()}');
+    debugPrint(
+        '[DeviceConfig] ✗ No match found. Available devices: ${_deviceRegistry.keys.toList()}');
     return null;
   }
 
@@ -146,5 +164,6 @@ class DeviceConfigService {
   }
 
   /// Expose registry for debug/testing
-  static Map<String, String> listRegisteredDevices() => Map.from(_deviceRegistry);
+  static Map<String, String> listRegisteredDevices() =>
+      Map.from(_deviceRegistry);
 }

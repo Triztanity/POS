@@ -9,6 +9,7 @@ import 'services/nfc_reader_mode_service.dart';
 import 'services/inspector_nfc_handler.dart';
 import 'services/inspection_sync_service.dart';
 import 'services/arrival_report_sync_service.dart';
+import 'services/sms_booking_alert_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
@@ -79,7 +80,9 @@ class _AfcsAppState extends State<AfcsApp> {
     InspectionSyncService();
     // Start arrival report background sync service
     ArrivalReportSyncService();
-    
+    // Start listening for incoming booking alerts via SMS
+    SmsBookingAlertService().startListening();
+
     debugPrint('[MAIN] AfcsApp initState complete');
   }
 
@@ -96,7 +99,8 @@ class _AfcsAppState extends State<AfcsApp> {
     // Initialize inspector NFC handler with the global navigator key
     // This allows it to intercept inspector card taps from any screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('[MAIN] Post-frame callback: initializing InspectorNFCHandler');
+      debugPrint(
+          '[MAIN] Post-frame callback: initializing InspectorNFCHandler');
       InspectorNFCHandler.instance.initialize(navigatorKey);
     });
 
@@ -107,8 +111,8 @@ class _AfcsAppState extends State<AfcsApp> {
       home: const SplashScreen(),
       routes: {
         '/inspector': (ctx) => InspectorScreen(
-          routeDirection: 'north_to_south', // TODO: Get from app state
-        ),
+              routeDirection: 'north_to_south', // TODO: Get from app state
+            ),
       },
     );
   }

@@ -134,6 +134,7 @@ class _DispatchScreenState extends State<DispatchScreen> {
     }
 
     final newTrip = claimedTripId;
+
     await LocalStorage.setCurrentTripId(newTrip);
     await LocalStorage.setCurrentVehicleNo(assignedBus);
     await LocalStorage.resetTripState(newTrip);
@@ -296,210 +297,224 @@ class _DispatchScreenState extends State<DispatchScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return PopScope(
-      canPop: false,
-      child: Scaffold(
-      appBar: AppBar(
-        title: const Text('Dispatch'),
-        centerTitle: true,
-        backgroundColor: Colors.green[800],
-        elevation: 2,
-        automaticallyImplyLeading: false,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top content
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Finalize Trip',
-                      style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text('Trip ID: $currentTripId',
-                      style: TextStyle(
-                          color: Colors.grey[700], fontSize: 11)),
-                  const SizedBox(height: 10),
-                  Card(
-                    elevation: 1,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10.0, vertical: 10.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Trip Crew',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13)),
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Driver',
-                                  style: TextStyle(
-                                      color: Colors.black54, fontSize: 11)),
-                              Text(
-                                  LocalStorage.loadCurrentDriver()?['name']
-                                          ?.toString() ??
-                                      'Not assigned',
-                                  style: const TextStyle(fontSize: 12)),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Conductor',
-                                  style: TextStyle(
-                                      color: Colors.black54, fontSize: 11)),
-                              Text(
-                                  LocalStorage.loadCurrentConductor()?['name']
-                                          ?.toString() ??
-                                      'Not assigned',
-                                  style: const TextStyle(fontSize: 12)),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Route display - expanded to fill center
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: _loadingSchedule
-                      ? const CircularProgressIndicator()
-                      : _nextSchedule != null
-                          ? Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text('NEXT SCHEDULE',
-                                    style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black54)),
-                                const SizedBox(height: 12),
-                                Text(
-                                  _nextSchedule!['route']?.toString() ??
-                                      _getRouteFromSchedule(_nextSchedule!),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green[800],
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  _getScheduledTime(_nextSchedule!),
-                                  style: const TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ],
-                            )
-                          : const Text('No upcoming schedule',
-                              style: TextStyle(
-                                  fontSize: 16, color: Colors.black54)),
-                ),
-              ),
-            ),
-
-            // Bottom buttons
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Column(
-                children: [
-                  const Text(
-                      'Finalizing will lock all records for this trip and start a new trip session.',
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
-                      textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  Row(
+        canPop: false,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Dispatch'),
+            centerTitle: true,
+            backgroundColor: Colors.green[800],
+            elevation: 2,
+            automaticallyImplyLeading: false,
+          ),
+          body: SafeArea(
+            child: Column(
+              children: [
+                // Top content
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const NextDayDispatchScreen()),
+                      const Text('Finalize Trip',
+                          style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      Text('Trip ID: $currentTripId',
+                          style:
+                              TextStyle(color: Colors.grey[700], fontSize: 11)),
+                      const SizedBox(height: 10),
+                      Card(
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10.0, vertical: 10.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Trip Crew',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13)),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Driver',
+                                      style: TextStyle(
+                                          color: Colors.black54, fontSize: 11)),
+                                  Text(
+                                      LocalStorage.loadCurrentDriver()?['name']
+                                              ?.toString() ??
+                                          'Not assigned',
+                                      style: const TextStyle(fontSize: 12)),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Conductor',
+                                      style: TextStyle(
+                                          color: Colors.black54, fontSize: 11)),
+                                  Text(
+                                      LocalStorage.loadCurrentConductor()?[
+                                                  'name']
+                                              ?.toString() ??
+                                          'Not assigned',
+                                      style: const TextStyle(fontSize: 12)),
+                                ],
+                              ),
+                            ],
                           ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            side: BorderSide(color: Colors.grey[300]!),
-                          ),
-                          child: const Text('Next-Day Dispatch',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 14)),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.check_circle_outline),
-                          label: const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 12),
-                            child: Text('Deploy',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    color: Colors.white)),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  const Color.fromRGBO(255, 0, 0, 1)),
-                          onPressed: () async {
-                            final conn = await Connectivity().checkConnectivity();
-                            if (conn == ConnectivityResult.none) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                        content: Text(
-                                            'Device must be online to deploy.')));
-                              }
-                              return;
-                            }
-
-                            if (_nextSchedule == null) {
-                              if (mounted) {
-                                await Dialogs.showMessage(context, 'No Schedule',
-                                    'No upcoming schedule found to deploy.');
-                              }
-                              return;
-                            }
-
-                            // Auto-select route from the Firebase schedule
-                            final route = <String, String>{
-                              'routeId': _nextSchedule!['routeId']?.toString() ?? '',
-                              'routeName': _nextSchedule!['route']?.toString() ??
-                                  _nextSchedule!['routeName']?.toString() ?? '',
-                            };
-
-                            await _showDispatcherConfirmDialog(context, route);
-                          },
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+
+                // Route display - expanded to fill center
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: _loadingSchedule
+                          ? const CircularProgressIndicator()
+                          : _nextSchedule != null
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('NEXT SCHEDULE',
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.black54)),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      _nextSchedule!['route']?.toString() ??
+                                          _getRouteFromSchedule(_nextSchedule!),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green[800],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _getScheduledTime(_nextSchedule!),
+                                      style: const TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : const Text('No upcoming schedule',
+                                  style: TextStyle(
+                                      fontSize: 16, color: Colors.black54)),
+                    ),
+                  ),
+                ),
+
+                // Bottom buttons
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: Column(
+                    children: [
+                      const Text(
+                          'Finalizing will lock all records for this trip and start a new trip session.',
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        const NextDayDispatchScreen()),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                side: BorderSide(color: Colors.grey[300]!),
+                              ),
+                              child: const Text('Next-Day Dispatch',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14)),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.check_circle_outline),
+                              label: const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 12),
+                                child: Text('Deploy',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: Colors.white)),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      const Color.fromRGBO(255, 0, 0, 1)),
+                              onPressed: () async {
+                                final conn =
+                                    await Connectivity().checkConnectivity();
+                                if (conn == ConnectivityResult.none) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                            content: Text(
+                                                'Device must be online to deploy.')));
+                                  }
+                                  return;
+                                }
+
+                                if (_nextSchedule == null) {
+                                  if (mounted) {
+                                    await Dialogs.showMessage(
+                                        context,
+                                        'No Schedule',
+                                        'No upcoming schedule found to deploy.');
+                                  }
+                                  return;
+                                }
+
+                                // Auto-select route from the Firebase schedule
+                                final route = <String, String>{
+                                  'routeId':
+                                      _nextSchedule!['routeId']?.toString() ??
+                                          '',
+                                  'routeName': _nextSchedule!['route']
+                                          ?.toString() ??
+                                      _nextSchedule!['routeName']?.toString() ??
+                                      '',
+                                };
+
+                                await _showDispatcherConfirmDialog(
+                                    context, route);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-    ));
+          ),
+        ));
   }
 }

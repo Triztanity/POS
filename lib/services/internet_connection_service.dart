@@ -1,11 +1,9 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
-import 'package:http/http.dart' as http;
 
 /// InternetConnectionService
 /// Monitors WiFi and internet connectivity status
-/// Also checks for ESP32 gateway reachability
 class InternetConnectionService {
   static final InternetConnectionService _instance =
       InternetConnectionService._internal();
@@ -92,41 +90,12 @@ class InternetConnectionService {
     }
   }
 
-  /// Check if ESP32 gateway is reachable (local network check)
-  /// This checks if device is connected to ESP32's hotspot
-  Future<bool> isESP32Reachable() async {
-    try {
-      debugPrint('[Internet] Checking ESP32 gateway reachability...');
-
-      // Try to reach ESP32 at its default gateway IP
-      final response = await http
-          .get(Uri.parse('http://192.168.4.1/'))
-          .timeout(const Duration(seconds: 3));
-
-      final reachable =
-          response.statusCode == 200 || response.statusCode == 404;
-      debugPrint('[Internet] ESP32 reachable: $reachable');
-      return reachable;
-    } catch (e) {
-      debugPrint('[Internet] ESP32 not reachable: $e');
-      return false;
-    }
-  }
-
-  /// Check if connected to ESP32 gateway (ONLY checks ESP32, no fallback)
+  /// Backward-compatible method name used by existing dialogs.
+  /// Returns true when any network is available.
   Future<bool> isConnectedToGateway() async {
     try {
-      // First check if we have WiFi connection
       final result = await _connectivity.checkConnectivity();
-      if (result == ConnectivityResult.none) {
-        debugPrint('[Internet] No WiFi/network connection');
-        return false;
-      }
-
-      // Check if ESP32 is reachable (local gateway)
-      final esp32Available = await isESP32Reachable();
-      debugPrint('[Internet] ESP32 gateway status: $esp32Available');
-      return esp32Available;
+      return result != ConnectivityResult.none;
     } catch (e) {
       debugPrint('[Internet] Error checking gateway: $e');
       return false;

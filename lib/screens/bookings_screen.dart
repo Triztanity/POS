@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/booking.dart';
 import '../utils/fare_calculator.dart';
-import '../services/internet_connection_service.dart';
-import '../services/esp32_gateway_service.dart';
-import '../widgets/internet_connection_dialog.dart';
+import '../services/sms_status_sender_service.dart';
+import '../local_storage.dart';
 import '../utils/dialogs.dart';
 
 class BookingsScreen extends StatefulWidget {
@@ -15,23 +14,15 @@ class BookingsScreen extends StatefulWidget {
 
 class _BookingsScreenState extends State<BookingsScreen> {
   late BookingManager _bookingManager;
-  late InternetConnectionService _internetService;
-  late ESP32GatewayService _esp32Gateway;
 
   @override
   void initState() {
     super.initState();
     _bookingManager = BookingManager();
-    _internetService = InternetConnectionService();
-    _esp32Gateway = ESP32GatewayService();
-
-    // Initialize internet monitoring
-    _internetService.initialize();
   }
 
   @override
   void dispose() {
-    _internetService.dispose();
     super.dispose();
   }
 
@@ -306,34 +297,10 @@ class _BookingsScreenState extends State<BookingsScreen> {
     );
   }
 
-  /// Send booking dropoff update to ESP32 Gateway
+  /// Queue booking drop-off update for Raspberry Pi gateway.
   void _handleDropoffClick(Booking booking) async {
     try {
       debugPrint('[Bookings] Drop-off button clicked for: ${booking.id}');
-
-      // Check if ESP32 gateway is reachable
-      final isConnected = await _internetService.isConnectedToGateway();
-
-      if (!isConnected) {
-        debugPrint(
-            '[Bookings] No connection to ESP32 gateway. Showing dialog...');
-        if (mounted) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (ctx) => InternetConnectionDialog(
-              onConnected: () {
-                debugPrint(
-                    '[Bookings] Gateway connected. Proceeding with drop-off...');
-                _proceedWithDropoff(booking);
-              },
-            ),
-          );
-        }
-        return;
-      }
-
-      // Gateway is connected, proceed with drop-off
       _proceedWithDropoff(booking);
     } catch (e) {
       debugPrint('[Bookings] Error in drop-off: $e');
@@ -377,24 +344,30 @@ class _BookingsScreenState extends State<BookingsScreen> {
       // Immediately refresh UI to reflect dropped-off status
       if (mounted) setState(() {});
 
-      // Send to ESP32 Gateway
+      // Send status update via SMS to Raspberry Pi gateway.
       if (mounted) {
-        await Dialogs.showMessage(context, 'Sending', 'Sending to ESP32...');
+        await Dialogs.showMessage(
+            context, 'Sending', 'Sending status via SMS...');
       }
 
-      final result = await _esp32Gateway.sendDropoffToESP32(
+      final result = await SmsStatusSenderService().sendBookingStatusSms(
         bookingId: booking.id,
+        tripId: LocalStorage.getCurrentTripId(),
         status: 'dropped-off',
         dropoffTimestamp: DateTime.now().toIso8601String(),
+        passengerUid: booking.passengerUid,
       );
 
       if (mounted) {
         if (result['success'] == true) {
-          await Dialogs.showMessage(context, 'Success',
-              '${result['message'] ?? 'Successfully sent to ESP32'}');
+          await Dialogs.showMessage(
+              context, 'Success', 'Drop-off status SMS sent.');
         } else {
           await Dialogs.showMessage(
-              context, 'Failed', '${result['message'] ?? 'Failed to send'}');
+            context,
+            'Failed',
+            'Failed to send SMS: ${result['message'] ?? 'Unknown error'}',
+          );
         }
         setState(() {});
       }

@@ -6,7 +6,6 @@ import '../services/app_state.dart';
 import '../models/booking.dart';
 import 'home_screen.dart';
 import '../utils/dialogs.dart';
-import '../widgets/esp32_connection_dialog.dart';
 // route_selection_screen removed from post-login flow
 
 class LoginScreen extends StatefulWidget {
@@ -106,7 +105,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Sequence: driver tap → ESP32 dialog → home screen
+    // Sequence: conductor tap → driver tap → home screen
     Future<void> promptDriverTap() async {
       setState(() {
         _status = 'Conductor logged in. Driver, please tap your ID.';
@@ -116,30 +115,14 @@ class _LoginScreenState extends State<LoginScreen> {
         if (role == 'driver') {
           AppState.instance.setDriver(driver);
           LocalStorage.saveCurrentDriver(driver);
-          debugPrint(
-              '[LOGIN] Driver detected, proceeding to ESP32 connection dialog');
+          debugPrint('[LOGIN] Driver detected, proceeding to HomeScreen');
           break;
         }
       }
     }
 
-    Future<void> showEsp32Dialog() async {
-      final connected = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => Esp32ConnectionDialog(),
-      );
-      if (connected != true) {
-        setState(() {
-          _status = 'ESP32 connection failed. Please retry.';
-        });
-        return;
-      }
-    }
-
     Future<void> proceedLoginFlow() async {
       await promptDriverTap();
-      await showEsp32Dialog();
 
       debugPrint('[LOGIN] navigating to HomeScreen (no route chooser)');
       final curRoute = LocalStorage.getCurrentRoute();

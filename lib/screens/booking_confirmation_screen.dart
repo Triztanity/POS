@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/qr_data.dart';
-import '../services/esp32_gateway_service.dart';
+import '../services/sms_status_sender_service.dart';
 import '../utils/fare_calculator.dart';
+import '../local_storage.dart';
 
 /// Booking Confirmation Screen
 /// After QR validation, conductor reviews booking and confirms fare for printing
@@ -165,7 +166,9 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                   padding: EdgeInsets.symmetric(horizontal: screenW * 0.02),
                   decoration: BoxDecoration(
                     border: Border.all(
-                      color: selectedPassengerType == null ? Colors.red : Colors.black54,
+                      color: selectedPassengerType == null
+                          ? Colors.red
+                          : Colors.black54,
                     ),
                     borderRadius: BorderRadius.circular(6),
                   ),
@@ -299,31 +302,31 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                     onPressed: selectedPassengerType == null
                         ? null
                         : () async {
-                      // Send on-board status to ESP32 gateway
-                      final bookingId = widget.qrData.bookingId;
-                      final timestamp = DateTime.now().toIso8601String();
-                      try {
-                        final result =
-                            await ESP32GatewayService().sendDropoffToESP32(
-                          bookingId: bookingId,
-                          status: 'on-board',
-                          dropoffTimestamp: timestamp,
-                        );
-                        if (result['success'] == true) {
-                          // Optionally show success dialog
-                        } else {
-                          // Optionally show error dialog
-                        }
-                      } catch (e) {
-                        // Optionally show error dialog
-                      }
-                      Navigator.pop(context, {
-                        'passengerType': selectedPassengerType!,
-                        'originalFare': originalFare,
-                        'discountAmount': discountAmount,
-                        'finalFare': finalFare,
-                      });
-                    },
+                            // Queue on-board status for Raspberry Pi gateway
+                            final bookingId = widget.qrData.bookingId;
+                            try {
+                              final result = await SmsStatusSenderService()
+                                  .sendBookingStatusSms(
+                                bookingId: bookingId,
+                                tripId: LocalStorage.getCurrentTripId(),
+                                status: 'on-board',
+                                passengerUid: widget.qrData.userId,
+                              );
+                              if (result['success'] == true) {
+                                // Optionally show success dialog
+                              } else {
+                                // Optionally show error dialog
+                              }
+                            } catch (e) {
+                              // Optionally show error dialog
+                            }
+                            Navigator.pop(context, {
+                              'passengerType': selectedPassengerType!,
+                              'originalFare': originalFare,
+                              'discountAmount': discountAmount,
+                              'finalFare': finalFare,
+                            });
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green[700],
                       shape: RoundedRectangleBorder(
