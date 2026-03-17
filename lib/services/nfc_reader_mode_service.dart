@@ -11,10 +11,8 @@ class NFCReaderModeService {
 
   static final NFCReaderModeService instance = NFCReaderModeService._internal();
 
-  static const platform =
-      MethodChannel('com.example.untitled/nfc');
-  static const eventChannel =
-      EventChannel('com.example.untitled/nfc_tags');
+  static const platform = MethodChannel('com.example.untitled/nfc');
+  static const eventChannel = EventChannel('com.example.untitled/nfc_tags');
 
   final _controller = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onTag => _controller.stream;
@@ -37,7 +35,8 @@ class NFCReaderModeService {
     // Listen for native tag detection events via EventChannel
     _methodSub = eventChannel.receiveBroadcastStream().listen(
       (dynamic event) {
-        debugPrint('[NFC-READER-MODE] raw event received: ${event.runtimeType} -> $event');
+        debugPrint(
+            '[NFC-READER-MODE] raw event received: ${event.runtimeType} -> $event');
 
         // Accept several event shapes from native side:
         // - Map with 'uid' key
@@ -60,7 +59,10 @@ class NFCReaderModeService {
             _handleTagDetected(event);
             return;
           } else if (event is List<int>) {
-            final hex = event.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toUpperCase();
+            final hex = event
+                .map((b) => b.toRadixString(16).padLeft(2, '0'))
+                .join()
+                .toUpperCase();
             _handleTagDetected(hex);
             return;
           }
@@ -104,7 +106,8 @@ class NFCReaderModeService {
   }
 
   void _handleTagDetected(String uid) {
-    debugPrint('[NFC-READER-MODE] tag detected: $uid, lastEmitted=$_lastEmittedUid');
+    debugPrint(
+        '[NFC-READER-MODE] tag detected: $uid, lastEmitted=$_lastEmittedUid');
 
     // Debounce: avoid rapid re-reads of the same tag
     if (_lastEmittedUid == uid) {
@@ -114,7 +117,8 @@ class NFCReaderModeService {
 
     // Debug: Show all employees in storage
     final allEmployees = LocalStorage.getAllEmployees();
-    debugPrint('[NFC-READER-MODE] Total employees in storage: ${allEmployees.length}');
+    debugPrint(
+        '[NFC-READER-MODE] Total employees in storage: ${allEmployees.length}');
     for (final emp in allEmployees) {
       debugPrint('[NFC-READER-MODE] Stored: ${emp['uid']} -> ${emp['name']}');
     }
@@ -142,7 +146,8 @@ class NFCReaderModeService {
 
   /// Clear debounce so the same UID can be read again immediately.
   void resetDebounce() {
-    debugPrint('[NFC-READER-MODE] resetDebounce called (last=$_lastEmittedUid)');
+    debugPrint(
+        '[NFC-READER-MODE] resetDebounce called (last=$_lastEmittedUid)');
     _lastEmittedUid = null;
   }
 }

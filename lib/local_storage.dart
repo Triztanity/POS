@@ -823,7 +823,7 @@ class LocalStorage {
   static String getBusNumberFromAndroidId(String? androidId) {
     const androidIdToBusMap = {
       'e9fb9c8908a3cb9f': 'BUS-002', // H10P746259A0982
-      '2590ecaf10bb2b56': 'BUS-001', // BUS-001 device
+      '9983553c95c05ad9': 'BUS-001', // BUS-001 device
     };
     return androidIdToBusMap[androidId?.toLowerCase()] ?? 'UNKNOWN';
   }

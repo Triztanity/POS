@@ -395,6 +395,10 @@ class _InspectorScreenState extends State<InspectorScreen> {
     final screenH = mq.size.height;
     final screenW = mq.size.width;
 
+    // Compute safe bottom padding so content doesn't overflow under nav bars
+    // Add a small extra slack (12px) to ensure no fractional-pixel overflow
+    final double bottomSafePad = screenH * 0.03 + mq.viewPadding.bottom + 12.0;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -407,7 +411,14 @@ class _InspectorScreenState extends State<InspectorScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: EdgeInsets.all(screenW * 0.04),
+          // leave horizontal padding based on screen width, but ensure extra
+          // bottom padding (including system inset) to avoid pixel overflow.
+          padding: EdgeInsets.fromLTRB(
+            screenW * 0.04,
+            screenW * 0.04,
+            screenW * 0.04,
+            bottomSafePad,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

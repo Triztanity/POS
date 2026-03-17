@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/qr_data.dart';
-import '../services/sms_status_sender_service.dart';
+import '../services/booking_status_orchestrator_service.dart';
 import '../utils/fare_calculator.dart';
 import '../local_storage.dart';
 
@@ -305,8 +305,9 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                             // Queue on-board status for Raspberry Pi gateway
                             final bookingId = widget.qrData.bookingId;
                             try {
-                              final result = await SmsStatusSenderService()
-                                  .sendBookingStatusSms(
+                              final result =
+                                  await BookingStatusOrchestratorService()
+                                      .updateStatus(
                                 bookingId: bookingId,
                                 tripId: LocalStorage.getCurrentTripId(),
                                 status: 'on-board',

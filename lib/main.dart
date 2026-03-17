@@ -9,6 +9,7 @@ import 'services/nfc_reader_mode_service.dart';
 import 'services/inspector_nfc_handler.dart';
 import 'services/inspection_sync_service.dart';
 import 'services/arrival_report_sync_service.dart';
+import 'services/booking_status_orchestrator_service.dart';
 import 'services/sms_booking_alert_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
@@ -82,6 +83,8 @@ class _AfcsAppState extends State<AfcsApp> {
     ArrivalReportSyncService();
     // Start listening for incoming booking alerts via SMS
     SmsBookingAlertService().startListening();
+    // Start online-first booking status update orchestrator
+    BookingStatusOrchestratorService().initialize();
 
     debugPrint('[MAIN] AfcsApp initState complete');
   }
@@ -91,6 +94,7 @@ class _AfcsAppState extends State<AfcsApp> {
     NFCReaderModeService.instance.stop();
     InspectorNFCHandler.instance.dispose();
     InspectionSyncService().dispose();
+    BookingStatusOrchestratorService().dispose();
     super.dispose();
   }
 

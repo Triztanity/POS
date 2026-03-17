@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/booking.dart';
 import '../utils/fare_calculator.dart';
-import '../services/sms_status_sender_service.dart';
+import '../services/booking_status_orchestrator_service.dart';
 import '../local_storage.dart';
 import '../utils/dialogs.dart';
 
@@ -344,13 +344,13 @@ class _BookingsScreenState extends State<BookingsScreen> {
       // Immediately refresh UI to reflect dropped-off status
       if (mounted) setState(() {});
 
-      // Send status update via SMS to Raspberry Pi gateway.
+      // Send status update via Firebase first, then SMS fallback if needed.
       if (mounted) {
         await Dialogs.showMessage(
-            context, 'Sending', 'Sending status via SMS...');
+            context, 'Sending', 'Sending status update...');
       }
 
-      final result = await SmsStatusSenderService().sendBookingStatusSms(
+      final result = await BookingStatusOrchestratorService().updateStatus(
         bookingId: booking.id,
         tripId: LocalStorage.getCurrentTripId(),
         status: 'dropped-off',
@@ -361,7 +361,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
       if (mounted) {
         if (result['success'] == true) {
           await Dialogs.showMessage(
-              context, 'Success', 'Drop-off status SMS sent.');
+              context, 'Success', 'Drop-off status update queued/sent.');
         } else {
           await Dialogs.showMessage(
             context,

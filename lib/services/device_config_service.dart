@@ -21,7 +21,9 @@ class DeviceConfigService {
     'H10P74625AU0044': 'BUS-001',
     // Android IDs (strong identifier for these devices)
     'e9fb9c8908a3cb9f': 'BUS-002', // androidId for H10P746259A0982
-    '2590ecaf10bb2b56': 'BUS-001', // androidId for BUS-001 device
+    // Replaced previous BUS-001 androidId with the current device id.
+    // Old android id '2590ecaf10bb2b56' removed per device reprovisioning.
+    '9983553c95c05ad9': 'BUS-001', // current androidId for BUS-001 device
   };
 
   /// Open config box if not open

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/device_config_service.dart';
 import '../services/sms_booking_alert_service.dart';
 
 class BookingAlertsScreen extends StatefulWidget {
@@ -15,6 +16,7 @@ class _BookingAlertsScreenState extends State<BookingAlertsScreen> {
   final SmsBookingAlertService _service = SmsBookingAlertService();
   List<Map<String, dynamic>> _alerts = [];
   StreamSubscription<Map<String, dynamic>>? _sub;
+  String _assignedBus = '';
 
   @override
   void initState() {
@@ -23,7 +25,10 @@ class _BookingAlertsScreenState extends State<BookingAlertsScreen> {
     _sub = _service.alertsStream.listen((alert) {
       if (!mounted) return;
       setState(() {
-        _alerts.insert(0, alert);
+        final bus = (alert['busNumber'] ?? '').toString().trim().toUpperCase();
+        if (_assignedBus.isEmpty || bus.isEmpty || bus == _assignedBus) {
+          _alerts.insert(0, alert);
+        }
       });
     });
   }
@@ -35,11 +40,20 @@ class _BookingAlertsScreenState extends State<BookingAlertsScreen> {
   }
 
   Future<void> _load() async {
+    final assigned =
+        (await DeviceConfigService.getAssignedBus() ?? '').trim().toUpperCase();
     await _service.startListening();
     final alerts = await _service.getStoredAlerts();
+    final filtered = assigned.isEmpty
+        ? alerts
+        : alerts.where((a) {
+            final bus = (a['busNumber'] ?? '').toString().trim().toUpperCase();
+            return bus.isEmpty || bus == assigned;
+          }).toList();
     if (!mounted) return;
     setState(() {
-      _alerts = alerts;
+      _assignedBus = assigned;
+      _alerts = filtered;
     });
   }
 

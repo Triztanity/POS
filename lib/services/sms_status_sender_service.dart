@@ -37,6 +37,7 @@ class SmsStatusSenderService {
     required String status,
     String? passengerUid,
     String? dropoffTimestamp,
+    String? eventId,
   }) async {
     final permission = await Permission.sms.request();
     if (!permission.isGranted) {
@@ -46,20 +47,21 @@ class SmsStatusSenderService {
       };
     }
 
+    // Keep payload compact to reduce multipart SMS risk on weak signal.
     final payload = <String, dynamic>{
-      'type': 'booking.status',
-      'eventId': _eventId('booking-status'),
-      'bookingId': bookingId,
-      'tripId': tripId,
-      'status': status,
-      'timestamp': DateTime.now().toIso8601String(),
-      if (passengerUid != null && passengerUid.isNotEmpty)
-        'passengerUid': passengerUid,
+      't': 'bs', // booking status
+      'e': (eventId != null && eventId.isNotEmpty) ? eventId : _eventId('bs'),
+      'b': bookingId,
+      'trip': tripId,
+      's': status,
+      if (passengerUid != null && passengerUid.isNotEmpty) 'u': passengerUid,
       if (dropoffTimestamp != null && dropoffTimestamp.isNotEmpty)
-        'dropoffTimestamp': dropoffTimestamp,
+        'd': dropoffTimestamp,
     };
 
-    final message = jsonEncode(payload);
+    // Prefix helps gateway classify booking-status messages quickly and
+    // avoids relying on purely numeric-looking SMS content.
+    final message = 'BS|${jsonEncode(payload)}';
     final phone = _normalizePhone(_gatewayNumber);
 
     try {

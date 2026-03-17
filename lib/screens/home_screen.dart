@@ -161,13 +161,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final list = <Map<String, dynamic>>[];
 
+    final assignedBus = (_assignedBus ?? '').trim().toUpperCase();
+
     for (final item in latestByBooking.values) {
       final origin = (item['origin'] ?? '').toString().trim();
       final seats = int.tryParse((item['seats'] ?? '').toString()) ?? 0;
       final status = (item['status'] ?? '').toString().trim().toLowerCase();
+      final itemBus = (item['busNumber'] ?? '').toString().trim().toUpperCase();
 
       if (origin.isEmpty || seats <= 0) continue;
       if (status.isNotEmpty && status != 'waiting') continue;
+      // Enforce bus-scoped alerts only when incoming alert contains busNumber.
+      if (assignedBus.isNotEmpty &&
+          itemBus.isNotEmpty &&
+          itemBus != assignedBus) {
+        continue;
+      }
       list.add(item);
     }
 
@@ -176,8 +185,14 @@ class _HomeScreenState extends State<HomeScreen> {
       final origin = (item['origin'] ?? '').toString().trim();
       final seats = int.tryParse((item['seats'] ?? '').toString()) ?? 0;
       final status = (item['status'] ?? '').toString().trim().toLowerCase();
+      final itemBus = (item['busNumber'] ?? '').toString().trim().toUpperCase();
       if (origin.isEmpty || seats <= 0) continue;
       if (status.isNotEmpty && status != 'waiting') continue;
+      if (assignedBus.isNotEmpty &&
+          itemBus.isNotEmpty &&
+          itemBus != assignedBus) {
+        continue;
+      }
       list.add(item);
     }
 
@@ -324,18 +339,29 @@ class _HomeScreenState extends State<HomeScreen> {
                       options: getValidToStops(),
                       onChanged: (v) => setState(() => toLocation = v),
                     ),
-                    SizedBox(height: vpad),
+                    SizedBox(height: vpad + vpadSmall),
                     _buildPassengerTypeSelector(screenW),
-                    SizedBox(height: vpadSmall),
-                    _buildQrPopupButton(screenH, screenW, context),
-                    SizedBox(height: vpadSmall),
-                    _buildBookingsInWaitingButton(screenH, screenW, context),
-                    SizedBox(height: vpadSmall),
+                    SizedBox(height: vpad + vpadSmall),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildQrPopupButton(screenH, screenW, context),
+                        ),
+                        SizedBox(width: screenW * 0.02),
+                        Expanded(
+                          child: _buildBookingsInWaitingButton(
+                              screenH, screenW, context),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: vpad + vpadSmall),
                     _buildScanTicketButton(screenH, context),
                     SizedBox(height: vpadSmall),
+                    SizedBox(height: screenH * 0.02),
                     _buildQuantityAndTotal(screenW),
-                    Spacer(),
+                    SizedBox(height: vpad + vpadSmall),
                     _buildPrintButton(screenH),
+                    SizedBox(height: vpadSmall),
                   ],
                 ),
               ),
@@ -440,22 +466,51 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Header UI
   Widget _buildHeader(double screenW, double headerHeight) {
-    return SizedBox(
-      height: headerHeight,
+    final assignedBus = (_assignedBus ?? '').trim();
+    // Normalize assigned bus to a short numeric id (e.g. 'BUS-001' -> '001')
+    String posLabel;
+    if (assignedBus.isNotEmpty) {
+      final digits = assignedBus.replaceAll(RegExp(r'[^0-9]'), '');
+      final padded = digits.isNotEmpty ? digits.padLeft(3, '0') : assignedBus;
+      posLabel = 'POS $padded';
+    } else {
+      posLabel = 'POS';
+    }
+
+    // Use IntrinsicHeight so both panels match the MENU's measured height.
+    // This applies the MENU's height onto the Batman panel rather than
+    // the other way around.
+    return IntrinsicHeight(
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
             width: screenW * 0.67,
-            height: headerHeight,
             color: Colors.green[700],
+            padding: EdgeInsets.symmetric(vertical: headerHeight * 0.12),
             child: Center(
-              child: Text(
-                'Batman Starexpress',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Batman Starexpress',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    posLabel,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
             ),
           ),
@@ -465,8 +520,8 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () => Scaffold.of(context).openEndDrawer(),
               child: Container(
                 width: screenW * 0.25,
-                height: headerHeight,
                 color: Colors.green[700],
+                padding: EdgeInsets.symmetric(vertical: headerHeight * 0.12),
                 child: const Center(
                   child: Text(
                     'MENU',
@@ -488,6 +543,7 @@ class _HomeScreenState extends State<HomeScreen> {
       double screenW, double screenH, BuildContext context) {
     return Container(
       width: double.infinity,
+      constraints: BoxConstraints(minHeight: screenH * 0.24),
       padding: EdgeInsets.all(screenW * 0.03),
       decoration: BoxDecoration(
         color: const Color(0xFFE8F5E9),
@@ -501,15 +557,18 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Icon(Icons.directions_bus, color: Colors.green[800], size: 20),
               const SizedBox(width: 8),
-              Text(
-                'ACTIVE WAITING BOOKINGS',
-                style: TextStyle(
-                  color: Colors.green[900],
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
+              Expanded(
+                child: Text(
+                  'ACTIVE BOOKINGS',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.green[900],
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
                 ),
               ),
-              const Spacer(),
               TextButton(
                 onPressed: () {
                   Navigator.push(
@@ -519,6 +578,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   );
                 },
+                style: TextButton.styleFrom(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  minimumSize: const Size(0, 36),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
                 child: const Text('VIEW ALL'),
               ),
             ],
@@ -652,8 +716,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildQrPopupButton(
       double screenH, double screenW, BuildContext context) {
     return SizedBox(
-      width: double.infinity,
-      height: screenH * 0.056,
+      height: screenH * 0.150,
       child: OutlinedButton.icon(
         onPressed: () => _showQrPopup(context),
         style: OutlinedButton.styleFrom(
@@ -661,9 +724,12 @@ class _HomeScreenState extends State<HomeScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
         icon: Icon(Icons.qr_code, color: Colors.green[700]),
-        label: const Text(
-          'TAP TO VIEW QR',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+        label: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'VIEW QR',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          ),
         ),
       ),
     );
@@ -703,40 +769,45 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildBookingsInWaitingButton(
       double screenH, double screenW, BuildContext context) {
     return SizedBox(
-      width: double.infinity,
-      height: screenH * 0.056,
+      height: screenH * 0.150,
       child: OutlinedButton(
         onPressed: () => _showBookingsDialog(context, screenW, screenH),
         style: OutlinedButton.styleFrom(
           side: BorderSide(color: Colors.green.shade700),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.list_alt, color: Colors.green[700]),
-            const SizedBox(width: 8),
-            const Text(
-              'BOOKINGS IN WAITING',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-            ),
-          ],
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.list_alt, color: Colors.green[700]),
+              const SizedBox(width: 8),
+              const Text(
+                'BOOKINGS',
+                style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  void _showBookingsDialog(BuildContext context, double screenW, double screenH) {
+  void _showBookingsDialog(
+      BuildContext context, double screenW, double screenH) {
     showDialog(
       context: context,
       builder: (_) {
         return Dialog(
+          insetPadding: EdgeInsets.symmetric(
+              horizontal: screenW * 0.02, vertical: screenH * 0.10),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: screenW * 0.95,
-              maxHeight: screenH * 0.8,
+              maxWidth: screenW * 0.98,
+              maxHeight: screenH * 0.9,
             ),
             child: SingleChildScrollView(
               child: Padding(
@@ -754,7 +825,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildScanTicketButton(double screenH, BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: screenH * 0.060,
+      height: screenH * 0.080,
       child: ElevatedButton(
         onPressed: () async {
           if (LocalStorage.isManualMode()) {
@@ -940,7 +1011,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildPrintButton(double screenH) {
     return SizedBox(
       width: double.infinity,
-      height: screenH * 0.065,
+      height: screenH * 0.080,
       child: ElevatedButton(
         onPressed: () async {
           if (passengerType == null) {
