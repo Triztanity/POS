@@ -60,7 +60,7 @@ class Booking {
       route: m['route']?.toString() ?? '',
       date: m['date']?.toString() ?? '',
       time: m['time']?.toString() ?? '',
-      passengers: (m['passengers'] is int) ? m['passengers'] as int : int.tryParse(m['passengers']?.toString() ?? '0') ?? 0,
+      passengers: _parsePassengerCount(m),
       fromLocation: m['fromLocation']?.toString() ?? '',
       toLocation: m['toLocation']?.toString() ?? '',
       passengerType: m['passengerType']?.toString() ?? 'REGULAR',
@@ -68,6 +68,27 @@ class Booking {
       status: m['status']?.toString() ?? 'on-board',
       dropoffTimestamp: m['dropoffTimestamp']?.toString(),
     );
+  }
+
+  static int _parsePassengerCount(Map<String, dynamic> map) {
+    final raw = map['passengers'] ??
+        map['numberOfPassengers'] ??
+        map['passengerCount'] ??
+        map['qty'] ??
+        map['quantity'];
+
+    int parsed = 1;
+    if (raw is int) {
+      parsed = raw;
+    } else if (raw is num) {
+      parsed = raw.round();
+    } else {
+      final text = raw?.toString().trim() ?? '';
+      parsed = int.tryParse(text) ?? double.tryParse(text)?.round() ?? 1;
+    }
+
+    // Booking passenger count should never be below 1 in UI summaries.
+    return parsed < 1 ? 1 : parsed;
   }
 }
 

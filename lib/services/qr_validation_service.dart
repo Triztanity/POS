@@ -8,13 +8,15 @@ import 'device_config_service.dart';
 /// QR Validation Service - Validates QR data against device configuration
 class QRValidationService {
   /// Validate QR data against device bus number (reads assigned bus from device config)
-  static Future<route_validator.ValidationResult> validateBusNumber(QRData qrData) async {
+  static Future<route_validator.ValidationResult> validateBusNumber(
+      QRData qrData) async {
     final ticketBus = _normalizeBusNumber(qrData.assignedBusNumber);
     final deviceBusRaw = await DeviceConfigService.getAssignedBus();
     if (deviceBusRaw == null || deviceBusRaw.isEmpty) {
       return route_validator.ValidationResult(
         isValid: false,
-        message: 'Device not configured: unable to determine assigned bus. Please contact admin.',
+        message:
+            'Device not configured: unable to determine assigned bus. Please contact admin.',
         errorType: 'DEVICE_NOT_CONFIGURED',
       );
     }
@@ -22,7 +24,8 @@ class QRValidationService {
     if (ticketBus != deviceBus) {
       return route_validator.ValidationResult(
         isValid: false,
-        message: 'Passenger boarded the wrong bus.\\n\\nTicket: ${qrData.assignedBusNumber}\\nDevice: $deviceBusRaw',
+        message:
+            'Passenger boarded the wrong bus.\\n\\nTicket: ${qrData.assignedBusNumber}\\nDevice: $deviceBusRaw',
         errorType: 'WRONG_BUS',
       );
     }
@@ -36,16 +39,21 @@ class QRValidationService {
   /// Supports both simple direction names and full route format
   static route_validator.ValidationResult validateRoute(
     QRData qrData,
-    String deviceRouteDirection, // expected values: 'north_to_south' or 'south_to_north' (or 'north'/'south')
+    String
+        deviceRouteDirection, // expected values: 'north_to_south' or 'south_to_north' (or 'north'/'south')
   ) {
     // Step 1: Resolve station names from QR (handles "Station 5" → actual place name mapping)
     final qrOrigin = resolveStationName(qrData.origin);
     final qrDestination = resolveStationName(qrData.destination);
 
     // Step 2: Resolve indices using the centralized RouteValidator
-    final stationList = route_validator.RouteValidator.getStationListForDirection(deviceRouteDirection);
-    final originIndex = route_validator.RouteValidator.findStationIndex(qrOrigin, stationList);
-    final destIndex = route_validator.RouteValidator.findStationIndex(qrDestination, stationList);
+    final stationList =
+        route_validator.RouteValidator.getStationListForDirection(
+            deviceRouteDirection);
+    final originIndex =
+        route_validator.RouteValidator.findStationIndex(qrOrigin, stationList);
+    final destIndex = route_validator.RouteValidator.findStationIndex(
+        qrDestination, stationList);
 
     // Step 3: Determine outcome according to rules
     // Undetermined Location: either station not found
@@ -94,11 +102,12 @@ class QRValidationService {
     try {
       final box = Hive.box<List>('scanned_tickets');
       final tickets = box.get('all') ?? [];
-      
+
       // Check if any scanned ticket has this bookingId
       for (var ticketData in tickets) {
         if (ticketData is Map) {
-          final ticket = Map<String, dynamic>.from(ticketData.cast<String, dynamic>());
+          final ticket =
+              Map<String, dynamic>.from(ticketData.cast<String, dynamic>());
           if (ticket['bookingId']?.toString() == bookingId) {
             return route_validator.ValidationResult(
               isValid: false,
@@ -108,7 +117,7 @@ class QRValidationService {
           }
         }
       }
-      
+
       return route_validator.ValidationResult(
         isValid: true,
         message: 'Booking not previously scanned.',
@@ -125,7 +134,8 @@ class QRValidationService {
 
   /// Calculate discount based on passenger type
   static double calculateDiscount(double originalFare, String passengerType) {
-    if (passengerType == 'REGULAR') {
+    final normalizedType = passengerType.trim().toUpperCase();
+    if (normalizedType == 'REGULAR') {
       return 0.0; // No discount
     }
     // Apply 20% discount for non-regular passengers
@@ -143,10 +153,10 @@ class QRValidationService {
   static String resolveStationName(String bookingStation) {
     // Strip numeric prefixes like "11. " first
     var cleaned = bookingStation.replaceAll(RegExp(r'^\d+\.\s*'), '').trim();
-    
+
     // Try the booking station mapping first (exact matches)
     var resolved = BookingStationMapping.resolveStation(cleaned);
-    
+
     // If the mapping returned the uppercase version, try to use it directly
     // The fuzzy matching in RouteValidationService.getStationIndex will handle variations
     return resolved;

@@ -48,33 +48,59 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
 
   void _updateFare() {
     if (selectedPassengerType == null) return;
-    // Use the QR code's fare as the reference (original fare) when possible.
-    // This finds the fare table entry that matches the QR `fare` and derives
-    // the discounted fare for non-regular passenger types. Falls back to
-    // distance-based calculation when no matching fare entry is found.
-    final qrFare = widget.qrData.fareAmount;
-    // Attempt to find a fare table row with the same (rounded) fare.
-    FareEntry? fareEntry;
-    try {
-      fareEntry = FareTable.getEntryByFare(qrFare);
-    } catch (e) {
-      // In some hot-reload/runtime states the static method may not be available;
-      // fall back cleanly to distance-based computation below.
-      fareEntry = null;
-    }
+    final normalizedPassengerType = selectedPassengerType!.trim().toUpperCase();
+    final passengerCount = widget.qrData.numberOfPassengers > 0
+        ? widget.qrData.numberOfPassengers
+        : 1;
+    final normalizedOrigin = widget.qrData.origin
+        .replaceAll(RegExp(r'^\d+\.\s*'), '')
+        .trim()
+        .toUpperCase();
+    final normalizedDestination = widget.qrData.destination
+        .replaceAll(RegExp(r'^\d+\.\s*'), '')
+        .trim()
+        .toUpperCase();
 
-    if (fareEntry != null) {
-      originalFare = qrFare;
-      if (selectedPassengerType!.toUpperCase() == 'REGULAR') {
+    // Always compute a regular baseline first so selecting REGULAR never applies discounts.
+    final regularFare = BookingFareCalculator.calculateFare(
+      origin: normalizedOrigin,
+      destination: normalizedDestination,
+      passengerType: 'REGULAR',
+      quantity: passengerCount,
+    ).toDouble();
+
+    final selectedFare = BookingFareCalculator.calculateFare(
+      origin: normalizedOrigin,
+      destination: normalizedDestination,
+      passengerType: normalizedPassengerType,
+      quantity: passengerCount,
+    ).toDouble();
+
+    if (regularFare > 0) {
+      originalFare = regularFare;
+      if (normalizedPassengerType == 'REGULAR') {
         finalFare = originalFare;
       } else {
-        finalFare = fareEntry.discount.toDouble();
+        finalFare = selectedFare > 0 ? selectedFare : originalFare;
       }
       discountAmount = originalFare - finalFare;
       return;
     }
 
-    // Fallback: calculate fare via station indices when we can't map by fare value
+    // Fallback when station mapping fails: preserve QR fare as baseline.
+    final qrFare = widget.qrData.fareAmount;
+    if (qrFare > 0) {
+      originalFare = qrFare;
+      if (normalizedPassengerType == 'REGULAR') {
+        finalFare = originalFare;
+      } else {
+        finalFare = selectedFare > 0 ? selectedFare : originalFare;
+      }
+      discountAmount = originalFare - finalFare;
+      return;
+    }
+
+    // Final fallback: use selected fare calculation result if available.
     final calculatedFare = BookingFareCalculator.calculateFare(
       origin: widget.qrData.origin
           .replaceAll(RegExp(r'^\d+\.\s*'), '')
@@ -84,15 +110,11 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
           .replaceAll(RegExp(r'^\d+\.\s*'), '')
           .trim()
           .toUpperCase(),
-      passengerType: selectedPassengerType!,
+      passengerType: normalizedPassengerType,
+      quantity: passengerCount,
     );
     finalFare = calculatedFare.toDouble();
-    // Keep originalFare as the QR fare if present, otherwise use calculated
-    if (widget.qrData.fareAmount > 0) {
-      originalFare = widget.qrData.fareAmount;
-    } else {
-      originalFare = finalFare;
-    }
+    originalFare = normalizedPassengerType == 'REGULAR' ? finalFare : 0;
     discountAmount = originalFare - finalFare;
   }
 

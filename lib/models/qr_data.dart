@@ -59,9 +59,7 @@ class QRData {
             '',
       ),
       passengerName: map['passengerName']?.toString() ?? '',
-      numberOfPassengers: (map['numberOfPassengers'] is int)
-          ? map['numberOfPassengers'] as int
-          : int.tryParse(map['numberOfPassengers']?.toString() ?? '1') ?? 1,
+        numberOfPassengers: _parsePassengerCount(map),
       bookingDate: map['bookingDate'] is DateTime
           ? map['bookingDate'] as DateTime
           : DateTime.tryParse(map['bookingDate']?.toString() ?? '') ??
@@ -98,6 +96,27 @@ class QRData {
       return fareValue.toDouble();
     }
     return double.tryParse(fareValue?.toString() ?? '0') ?? 0.0;
+  }
+
+  static int _parsePassengerCount(Map<String, dynamic> map) {
+    // Support different payload conventions from booking producers.
+    final raw = map['numberOfPassengers'] ??
+        map['passengers'] ??
+        map['passengerCount'] ??
+        map['qty'] ??
+        map['quantity'];
+
+    int parsed = 1;
+    if (raw is int) {
+      parsed = raw;
+    } else if (raw is num) {
+      parsed = raw.round();
+    } else {
+      final text = raw?.toString().trim() ?? '';
+      parsed = int.tryParse(text) ?? double.tryParse(text)?.round() ?? 1;
+    }
+
+    return parsed < 1 ? 1 : parsed;
   }
 
   static String _normalizeBusNumber(String raw) {
