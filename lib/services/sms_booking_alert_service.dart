@@ -24,9 +24,11 @@ class SmsBookingAlertService {
   StreamSubscription<dynamic>? _subscription;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _bookingsNewSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _bookingsSub;
+  Timer? _reconcileTimer;
   final StreamController<Map<String, dynamic>> _alertsController =
       StreamController<Map<String, dynamic>>.broadcast();
   bool _firebaseStarted = false;
+  String _assignedBus = '';
 
   Stream<Map<String, dynamic>> get alertsStream => _alertsController.stream;
 
@@ -63,6 +65,9 @@ class SmsBookingAlertService {
     _bookingsNewSub = null;
     await _bookingsSub?.cancel();
     _bookingsSub = null;
+    _reconcileTimer?.cancel();
+    _reconcileTimer = null;
+    _assignedBus = '';
     _firebaseStarted = false;
   }
 
@@ -79,6 +84,7 @@ class SmsBookingAlertService {
             '[SMS ALERT] Firebase booking sync skipped: no assigned bus');
         return;
       }
+      _assignedBus = assignedBus;
 
       final fs = FirebaseFirestore.instance;
 
@@ -89,7 +95,10 @@ class SmsBookingAlertService {
           .listen(
         (snapshot) async {
           for (final change in snapshot.docChanges) {
-            if (change.type == DocumentChangeType.removed) continue;
+            if (change.type == DocumentChangeType.removed) {
+              await _removeBookingFromAlerts(change.doc.id);
+              continue;
+            }
             await _ingestFirebaseDoc(change.doc,
                 sourceCollection: 'bookings_new');
           }
@@ -106,7 +115,10 @@ class SmsBookingAlertService {
           .listen(
         (snapshot) async {
           for (final change in snapshot.docChanges) {
-            if (change.type == DocumentChangeType.removed) continue;
+            if (change.type == DocumentChangeType.removed) {
+              await _removeBookingFromAlerts(change.doc.id);
+              continue;
+            }
             await _ingestFirebaseDoc(change.doc, sourceCollection: 'bookings');
           }
         },
@@ -114,6 +126,12 @@ class SmsBookingAlertService {
           debugPrint('[SMS ALERT] bookings stream error: $e');
         },
       );
+
+      await _reconcileAgainstLiveBookings();
+      _reconcileTimer?.cancel();
+      _reconcileTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
+        await _reconcileAgainstLiveBookings();
+      });
     } catch (e) {
       _firebaseStarted = false;
       debugPrint('[SMS ALERT] Firebase booking sync setup error: $e');
@@ -129,13 +147,27 @@ class SmsBookingAlertService {
       if (data == null) return;
       final status = (data['status'] ?? '').toString().trim().toLowerCase();
       if (status.isEmpty) return;
+      final bookingId = doc.id.trim();
+      if (bookingId.isEmpty) return;
+
+      if (status == 'dropped-off' || status == 'expired') {
+        await _removeBookingFromAlerts(bookingId);
+        return;
+      }
+
+      if (status != 'waiting' && status != 'on-board') {
+        return;
+      }
 
       final origin =
           (data['origin'] ?? data['pickup'] ?? data['fromLocation'] ?? '')
               .toString()
               .trim();
+      final destination =
+          (data['destination'] ?? data['dropoff'] ?? data['toLocation'] ?? '')
+              .toString()
+              .trim();
       final seats = _parseSeats(data);
-      final bookingId = doc.id;
       final receivedAtMs = _timestampToMs(
         data['updatedAt'] ?? data['createdAt'] ?? data['movedAt'],
       );
@@ -145,10 +177,21 @@ class SmsBookingAlertService {
         'status': status,
         'bookingId': bookingId,
         'origin': origin,
+        'destination': destination,
         'seats': seats,
         'station': (data['station'] ?? '').toString(),
         'busNumber': (data['busNumber'] ?? '').toString(),
+        'busRoute':
+            (data['busRoute'] ?? data['route'] ?? data['routeName'] ?? '')
+                .toString(),
         'tripId': (data['tripId'] ?? '').toString(),
+        'scheduledTimeStr': _normalizeScheduleKey(
+          data['scheduledTimeStr'] ??
+              data['ScheduleTime'] ??
+              data['scheduleTime'] ??
+              data['scheduledTime'] ??
+              data['scheduledTimeSTR'],
+        ),
         'eventId':
             (data['lastStatusEventId'] ?? data['gatewayLastAlertEventId'] ?? '')
                 .toString(),
@@ -171,6 +214,107 @@ class SmsBookingAlertService {
       _alertsController.add(alert);
     } catch (e) {
       debugPrint('[SMS ALERT] Firebase ingest error: $e');
+    }
+  }
+
+  Future<void> _removeBookingFromAlerts(String bookingId) async {
+    final id = bookingId.trim();
+    if (id.isEmpty) return;
+
+    final box = await _openBox();
+    final existingRaw = box.get(_alertsKey) ?? [];
+    final existing = existingRaw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+        .toList();
+
+    final before = existing.length;
+    existing.removeWhere((a) =>
+        (a['bookingId'] ?? '').toString().trim().toLowerCase() ==
+        id.toLowerCase());
+
+    if (existing.length != before) {
+      await box.put(_alertsKey, existing);
+      _alertsController.add({
+        'type': 'booking.removed',
+        'bookingId': id,
+        'source': 'firebase',
+        'receivedAtMs': DateTime.now().millisecondsSinceEpoch,
+        'receivedAtIso': DateTime.now().toIso8601String(),
+      });
+    }
+  }
+
+  Future<void> _reconcileAgainstLiveBookings() async {
+    if (_assignedBus.isEmpty) return;
+
+    try {
+      final fs = FirebaseFirestore.instance;
+      final liveStatusByBookingId = <String, String>{};
+
+      final newSnap = await fs
+          .collection('bookings_new')
+          .where('busNumber', isEqualTo: _assignedBus)
+          .get();
+      for (final d in newSnap.docs) {
+        final status =
+            (d.data()['status'] ?? '').toString().trim().toLowerCase();
+        if (status == 'waiting' || status == 'on-board') {
+          liveStatusByBookingId[d.id.trim()] = status;
+        }
+      }
+
+      final activeSnap = await fs
+          .collection('bookings')
+          .where('busNumber', isEqualTo: _assignedBus)
+          .get();
+      for (final d in activeSnap.docs) {
+        final status =
+            (d.data()['status'] ?? '').toString().trim().toLowerCase();
+        if (status == 'waiting' || status == 'on-board') {
+          liveStatusByBookingId[d.id.trim()] = status;
+        }
+      }
+
+      final box = await _openBox();
+      final existingRaw = box.get(_alertsKey) ?? [];
+      final existing = existingRaw
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+          .toList();
+
+      final filtered = <Map<String, dynamic>>[];
+      for (final item in existing) {
+        final bookingId = (item['bookingId'] ?? '').toString().trim();
+        if (bookingId.isEmpty) {
+          // Keep legacy alerts without booking ids if they still look active.
+          final status = (item['status'] ?? '').toString().trim().toLowerCase();
+          if (status.isEmpty || status == 'waiting' || status == 'on-board') {
+            filtered.add(item);
+          }
+          continue;
+        }
+
+        final liveStatus = liveStatusByBookingId[bookingId];
+        if (liveStatus == null) {
+          continue;
+        }
+
+        item['status'] = liveStatus;
+        filtered.add(item);
+      }
+
+      if (filtered.length != existing.length) {
+        await box.put(_alertsKey, filtered);
+        _alertsController.add({
+          'type': 'booking.reconciled',
+          'source': 'firebase',
+          'receivedAtMs': DateTime.now().millisecondsSinceEpoch,
+          'receivedAtIso': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (e) {
+      debugPrint('[SMS ALERT] reconcile error: $e');
     }
   }
 
@@ -298,6 +442,9 @@ class SmsBookingAlertService {
           (map['bookingId'] ?? map['booking_id'] ?? map['id'] ?? '').toString();
       final origin = (map['origin'] ?? map['from'] ?? map['fromLocation'] ?? '')
           .toString();
+      final destination =
+          (map['destination'] ?? map['to'] ?? map['toLocation'] ?? '')
+              .toString();
       final seatsRaw = (map['seats'] ??
               map['qty'] ??
               map['numberOfPassengers'] ??
@@ -317,10 +464,20 @@ class SmsBookingAlertService {
         'status': status,
         'bookingId': bookingId,
         'origin': origin,
+        'destination': destination,
         'seats': seats ?? 0,
         'station': (map['station'] ?? '').toString(),
         'busNumber': (map['busNumber'] ?? '').toString(),
+        'busRoute': (map['busRoute'] ?? map['route'] ?? map['routeName'] ?? '')
+            .toString(),
         'tripId': (map['tripId'] ?? '').toString(),
+        'scheduledTimeStr': _normalizeScheduleKey(
+          map['scheduledTimeStr'] ??
+              map['ScheduleTime'] ??
+              map['scheduleTime'] ??
+              map['scheduledTime'] ??
+              map['scheduledTimeSTR'],
+        ),
         'eventId': (map['eventId'] ?? '').toString(),
         'updatedAt': (map['updatedAt'] ?? '').toString(),
       };
@@ -351,6 +508,8 @@ class SmsBookingAlertService {
         values['bookingid'] ?? values['booking_id'] ?? values['id'] ?? '';
     final origin =
         values['origin'] ?? values['from'] ?? values['fromlocation'] ?? '';
+    final destination =
+        values['destination'] ?? values['to'] ?? values['tolocation'] ?? '';
     final seats = int.tryParse(
       values['seats'] ?? values['qty'] ?? values['passengers'] ?? '',
     );
@@ -358,9 +517,30 @@ class SmsBookingAlertService {
     if (origin.isEmpty || seats == null) return null;
 
     return {
+      'type': (values['type'] ?? 'booking.alert').toString().toLowerCase(),
+      'status': (values['status'] ?? '').toString().toLowerCase(),
       'bookingId': bookingId,
       'origin': origin,
+      'destination': destination,
       'seats': seats,
+      'station': values['station'] ?? '',
+      'busNumber': values['busnumber'] ?? '',
+      'busRoute':
+          values['busroute'] ?? values['route'] ?? values['routename'] ?? '',
+      'tripId': values['tripid'] ?? values['trip'] ?? '',
+      'scheduledTimeStr': _normalizeScheduleKey(
+        values['scheduledtimestr'] ??
+            values['scheduletime'] ??
+            values['scheduledtime'] ??
+            values['scheduled_time'] ??
+            '',
+      ),
+      'scheduleTime': _normalizeScheduleKey(
+        values['scheduletime'] ??
+            values['scheduledtime'] ??
+            values['scheduled_time'] ??
+            '',
+      ),
     };
   }
 
@@ -380,12 +560,17 @@ class SmsBookingAlertService {
     final origin = originMatch?.group(1)?.trim() ?? '';
     final seats = int.tryParse(seatsMatch?.group(1) ?? '');
     final bookingId = bookingMatch?.group(1)?.trim() ?? '';
+    final destinationMatch =
+        RegExp(r'(?:destination|to)\s*[:=]\s*([^,|;]+)', caseSensitive: false)
+            .firstMatch(body);
+    final destination = destinationMatch?.group(1)?.trim() ?? '';
 
     if (origin.isEmpty || seats == null) return null;
 
     return {
       'bookingId': bookingId,
       'origin': origin,
+      'destination': destination,
       'seats': seats,
     };
   }
@@ -397,6 +582,19 @@ class SmsBookingAlertService {
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
         .toList();
+
+    final bookingId = (alert['bookingId'] ?? '').toString().trim();
+    if (bookingId.isNotEmpty) {
+      // Keep one latest active alert per booking across status transitions.
+      existing.removeWhere((a) =>
+          (a['bookingId'] ?? '').toString().trim().toLowerCase() ==
+          bookingId.toLowerCase());
+      existing.add(alert);
+      existing.sort((a, b) =>
+          (b['receivedAtMs'] as int).compareTo((a['receivedAtMs'] as int)));
+      await box.put(_alertsKey, existing);
+      return;
+    }
 
     final dedupeId = _buildDedupeId(alert);
     final semanticId = _buildSemanticId(alert);
@@ -439,14 +637,22 @@ class SmsBookingAlertService {
     final bookingId = (alert['bookingId'] ?? '').toString().trim();
     final status = (alert['status'] ?? '').toString().trim().toLowerCase();
     final tripId = (alert['tripId'] ?? '').toString().trim();
+    final scheduledTimeKey = (alert['scheduledTimeStr'] ??
+            alert['ScheduleTime'] ??
+            alert['scheduleTime'] ??
+            alert['scheduledTime'] ??
+            alert['scheduledTimeSTR'] ??
+            '')
+        .toString()
+        .trim();
     final origin = (alert['origin'] ?? '').toString().trim().toLowerCase();
     final seats = (alert['seats'] ?? '').toString().trim();
 
     if (bookingId.isNotEmpty) {
-      return 'booking:$bookingId|status:$status|trip:$tripId';
+      return 'booking:$bookingId|status:$status|trip:$tripId|schedule:$scheduledTimeKey';
     }
 
-    return 'origin:$origin|seats:$seats|status:$status';
+    return 'origin:$origin|seats:$seats|status:$status|schedule:$scheduledTimeKey';
   }
 
   Future<List<Map<String, dynamic>>> getStoredAlerts() async {
@@ -464,5 +670,38 @@ class SmsBookingAlertService {
   Future<void> clearAll() async {
     final box = await _openBox();
     await box.put(_alertsKey, <Map<String, dynamic>>[]);
+  }
+
+  String _normalizeScheduleKey(dynamic raw) {
+    if (raw == null) return '';
+
+    if (raw is Timestamp) {
+      return _formatScheduleMinuteKey(raw.toDate());
+    }
+
+    if (raw is DateTime) {
+      return _formatScheduleMinuteKey(raw);
+    }
+
+    final text = raw.toString().trim();
+    if (text.isEmpty) return '';
+
+    final parsed = DateTime.tryParse(text) ??
+        DateTime.tryParse(text.replaceFirst(' ', 'T'));
+    if (parsed != null) {
+      return _formatScheduleMinuteKey(parsed);
+    }
+
+    return text.toLowerCase();
+  }
+
+  String _formatScheduleMinuteKey(DateTime dt) {
+    final local = dt.toLocal();
+    final y = local.year.toString().padLeft(4, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    final h = local.hour.toString().padLeft(2, '0');
+    final min = local.minute.toString().padLeft(2, '0');
+    return '$y-$m-$d $h:$min';
   }
 }

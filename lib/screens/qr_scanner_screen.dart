@@ -47,74 +47,66 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   }
 
   Future<void> _processQr(String rawQrData) async {
-    if (_isProcessing) return;
-    setState(() => _isProcessing = true);
-
     if (LocalStorage.isManualMode()) {
-      _showError('Manual Mode', 'Device is in manual ticketing mode. Scanning is disabled.');
-      setState(() => _isProcessing = false);
+      await _showError('Manual Mode',
+          'Device is in manual ticketing mode. Scanning is disabled.');
+      if (mounted) setState(() => _isProcessing = false);
       return;
     }
 
     try {
-    QRData qrData;
-    try {
-      qrData = QRData.fromJson(rawQrData);
-    } catch (e) {
-      _showError('Invalid QR Code', 'Failed to decode QR data: $e');
-      setState(() => _isProcessing = false);
-      return;
-    }
+      QRData qrData;
+      try {
+        qrData = QRData.fromJson(rawQrData);
+      } catch (e) {
+        await _showError('Invalid QR Code', 'Failed to decode QR data: $e');
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
 
-    // Check QR expiration (new validation)
-    final expirationValidation = QRValidationService.validateExpiration(qrData);
-    if (!expirationValidation.isValid) {
-      _handleValidationFailure(expirationValidation);
-      setState(() => _isProcessing = false);
-      return;
-    }
+      // Check for duplicate scan (new validation)
+      final duplicateValidation =
+          QRValidationService.checkDuplicate(qrData.bookingId);
+      if (!duplicateValidation.isValid) {
+        await _handleValidationFailure(duplicateValidation);
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
 
-    // Check for duplicate scan (new validation)
-    final duplicateValidation = QRValidationService.checkDuplicate(qrData.bookingId);
-    if (!duplicateValidation.isValid) {
-      _handleValidationFailure(duplicateValidation);
-      setState(() => _isProcessing = false);
-      return;
-    }
+      // Bus validation (kept as-is per constraints)
+      final busValidation = await QRValidationService.validateBusNumber(qrData);
+      if (!busValidation.isValid) {
+        await _handleValidationFailure(busValidation);
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
 
-    // Bus validation (kept as-is per constraints)
-    final busValidation = await QRValidationService.validateBusNumber(qrData);
-    if (!busValidation.isValid) {
-      _handleValidationFailure(busValidation);
-      setState(() => _isProcessing = false);
-      return;
-    }
+      // Route validation (centralized and index-based)
+      final routeValidation =
+          QRValidationService.validateRoute(qrData, widget.routeDirection);
+      if (!routeValidation.isValid) {
+        await _handleValidationFailure(routeValidation);
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
 
-    // Route validation (centralized and index-based)
-    final routeValidation = QRValidationService.validateRoute(qrData, widget.routeDirection);
-    if (!routeValidation.isValid) {
-      _handleValidationFailure(routeValidation);
-      setState(() => _isProcessing = false);
-      return;
-    }
-
-    // Passenger type selection
-    final result = await Navigator.push<Map<String, dynamic>>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BookingConfirmationScreen(
-          qrData: qrData,
-          routeDirection: widget.routeDirection,
-          conductorName: widget.conductorName,
-          driverName: widget.driverName,
+      // Passenger type selection
+      final result = await Navigator.push<Map<String, dynamic>>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BookingConfirmationScreen(
+            qrData: qrData,
+            routeDirection: widget.routeDirection,
+            conductorName: widget.conductorName,
+            driverName: widget.driverName,
+          ),
         ),
-      ),
-    );
+      );
 
-    if (result == null) {
-      setState(() => _isProcessing = false);
-      return;
-    }
+      if (result == null) {
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
 
       // Step 5: Extract fare data from passenger type selection
       final passengerType = result['passengerType'] as String;
@@ -144,7 +136,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       );
 
       // Step 7: Prepare ticket data for printing
-      final ticketRouteValue = widget.routeDirection == 'north_to_south' ? 'north' : 'south';
+      final ticketRouteValue =
+          widget.routeDirection == 'north_to_south' ? 'north' : 'south';
 
       final ticketData = {
         'bookingId': qrData.bookingId,
@@ -181,9 +174,12 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       final booking = Booking(
         id: qrData.bookingId,
         passengerName: qrData.passengerName,
-        route: widget.routeDirection == 'north_to_south' ? 'North → South' : 'South → North',
+        route: widget.routeDirection == 'north_to_south'
+            ? 'North → South'
+            : 'South → North',
         date: DateTime.now().toString().split(' ')[0], // YYYY-MM-DD
-        time: '${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+        time:
+            '${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}',
         passengers: qrData.numberOfPassengers,
         fromLocation: qrData.origin,
         toLocation: qrData.destination,
@@ -192,7 +188,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         amount: finalFare,
         status: 'on-board',
       );
-      
+
       // Step 11: Save booking to LocalStorage (will be synced to Firebase and deleted per trip)
       final bookingRecord = {
         'id': booking.id,
@@ -212,7 +208,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         'syncStatus': 'pending',
       };
       await LocalStorage.saveBookingForTrip(bookingRecord);
-      
+
       // Step 12: Add booking to BookingManager for display on bookings_screen
       BookingManager().addBooking(booking);
 
@@ -231,7 +227,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
             TextButton(
               onPressed: () {
                 Navigator.pop(context); // close dialog
-                Navigator.pop(context, scannedTicket.transactionId); // return to home screen
+                Navigator.pop(context,
+                    scannedTicket.transactionId); // return to home screen
               },
               child: const Text('OK'),
             )
@@ -240,38 +237,41 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      _showError('Error', 'An unexpected error occurred: $e');
+      await _showError('Error', 'An unexpected error occurred: $e');
     }
 
-    setState(() => _isProcessing = false);
+    if (mounted) setState(() => _isProcessing = false);
   }
 
-  void _handleValidationFailure(dynamic validationResult) {
-    final message = (validationResult?.message as String?) ?? 'Validation failed';
+  Future<void> _handleValidationFailure(dynamic validationResult) async {
+    final message =
+        (validationResult?.message as String?) ?? 'Validation failed';
     final errorType = (validationResult?.errorType as String?) ?? '';
 
     if (!mounted) return;
 
     if (errorType == 'UNDETERMINED_LOCATION') {
-      _showError('Undetermined Location', 'System could not determine the origin or destination');
+      await _showError('Undetermined Location',
+          'System could not determine the origin or destination');
       return;
     }
 
     if (errorType == 'OUT_OF_ROUTE') {
-      _showError('Out of Route', 'Passenger is out of route and going to the wrong direction');
+      await _showError('Out of Route',
+          'Passenger is out of route and going to the wrong direction');
       return;
     }
 
     if (errorType == 'WRONG_BUS') {
-      _showError('Wrong Bus', message);
+      await _showError('Wrong Bus', message);
       return;
     }
 
-    _showError('Validation Failed', message);
+    await _showError('Validation Failed', message);
   }
 
-  void _showError(String title, String message) {
-    showDialog(
+  Future<void> _showError(String title, String message) async {
+    await showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: Text(title),
@@ -302,6 +302,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
               if (barcodes.isNotEmpty) {
                 final String? code = barcodes.first.rawValue;
                 if (code != null && !_isProcessing) {
+                  _isProcessing = true;
+                  if (mounted) setState(() {});
                   _processQr(code);
                 }
               }

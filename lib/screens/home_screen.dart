@@ -14,9 +14,11 @@ import '../services/app_state.dart';
 import '../services/device_config_service.dart';
 import '../services/nfc_reader_mode_service.dart';
 import '../services/sms_booking_alert_service.dart';
+import '../services/qr_validation_service.dart';
 import '../local_storage.dart';
 import '../main.dart' show navigatorKey;
 import '../utils/dialogs.dart';
+import '../utils/route_validator.dart' as route_validator;
 
 class HomeScreen extends StatefulWidget {
   final String? routeDirection; // 'forward' or 'reverse'
@@ -36,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final SmsBookingAlertService _smsAlertService = SmsBookingAlertService();
   StreamSubscription<Map<String, dynamic>>? _bookingAlertSub;
   List<Map<String, dynamic>> _activeBookingAlerts = [];
+  String _activeScheduleTimeKey = '';
+  String _activeRouteDirectionKey = '';
 
   @override
   void initState() {
@@ -62,60 +66,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         setState(() => _assignedBus = bus);
       }
-      // Fetch the active schedule's routeId from Firestore to set correct direction
-      if (bus != null) {
-        try {
-          final query = await FirebaseFirestore.instance
-              .collection('schedules')
-              .where('busNumber', isEqualTo: bus)
-              .where('status', isEqualTo: 'departed')
-              .orderBy('dispatchTime', descending: true)
-              .limit(1)
-              .get();
-          if (query.docs.isNotEmpty && mounted) {
-            final data = query.docs.first.data();
-            // Parse route directly: "X to Y" → FROM=X, TO=Y
-            final routeStr =
-                (data['route'] ?? data['routeName'] ?? '').toString();
-            final parts =
-                routeStr.split(RegExp(r'\s+to\s+', caseSensitive: false));
-            if (parts.length == 2) {
-              final fromCity = parts[0].trim().toLowerCase();
-              final toCity = parts[1].trim().toLowerCase();
-              // Determine direction based on the parsed route
-              String newDirection;
-              if (fromCity.startsWith('nasugbu')) {
-                newDirection = 'north_to_south';
-              } else {
-                newDirection = 'south_to_north';
-              }
-              setState(() {
-                routeDirection = newDirection;
-                // Find matching stops for FROM
-                final fromMatch = availableStops.cast<String?>().firstWhere(
-                    (s) =>
-                        s != null &&
-                        FareTable.extractPlaceName(s)
-                            .toLowerCase()
-                            .startsWith(fromCity),
-                    orElse: () => null);
-                // Find matching stops for TO
-                final toMatch = availableStops.cast<String?>().firstWhere(
-                    (s) =>
-                        s != null &&
-                        FareTable.extractPlaceName(s)
-                            .toLowerCase()
-                            .startsWith(toCity),
-                    orElse: () => null);
-                if (fromMatch != null) fromLocation = fromMatch;
-                if (toMatch != null) toLocation = toMatch;
-              });
-            }
-          }
-        } catch (e) {
-          debugPrint('[HomeScreen] Error fetching active schedule route: $e');
-        }
-      }
+      await _refreshActiveScheduleContext();
     });
 
     _initActiveBookingAlerts();
@@ -132,6 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await _bookingAlertSub?.cancel();
     _bookingAlertSub = _smsAlertService.alertsStream.listen((_) async {
+      await _refreshActiveScheduleContext();
       final latest = await _smsAlertService.getStoredAlerts();
       if (!mounted) return;
       setState(() {
@@ -140,8 +92,96 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _refreshActiveScheduleContext() async {
+    final bus = (_assignedBus ?? '').trim();
+    if (bus.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _activeScheduleTimeKey = '';
+        _activeRouteDirectionKey = '';
+      });
+      return;
+    }
+
+    try {
+      final query = await FirebaseFirestore.instance
+          .collection('schedules')
+          .where('busNumber', isEqualTo: bus)
+          .where('status', isEqualTo: 'departed')
+          .orderBy('dispatchTime', descending: true)
+          .limit(1)
+          .get();
+
+      if (!mounted) return;
+
+      if (query.docs.isEmpty) {
+        setState(() {
+          _activeScheduleTimeKey = '';
+          _activeRouteDirectionKey = '';
+        });
+        return;
+      }
+
+      final data = query.docs.first.data();
+      final activeScheduleKey = _normalizeScheduleKey(
+        data['ScheduledTimeStr'] ??
+            data['scheduledTimeStr'] ??
+            data['ScheduleTime'] ??
+            data['scheduleTime'] ??
+            data['scheduledTime'] ??
+            data['scheduledTimeSTR'],
+      );
+      final routeStr = (data['route'] ?? data['routeName'] ?? '').toString();
+      final derivedDirection = _deriveRouteDirectionFromText(routeStr);
+
+      setState(() {
+        _activeScheduleTimeKey = activeScheduleKey;
+        if (derivedDirection.isNotEmpty) {
+          _activeRouteDirectionKey = derivedDirection;
+          routeDirection = derivedDirection;
+        }
+      });
+
+      final parts = routeStr.split(RegExp(r'\s+to\s+', caseSensitive: false));
+      if (parts.length == 2) {
+        final fromCity = parts[0].trim().toLowerCase();
+        final toCity = parts[1].trim().toLowerCase();
+        setState(() {
+          final fromMatch = availableStops.cast<String?>().firstWhere(
+              (s) =>
+                  s != null &&
+                  FareTable.extractPlaceName(s)
+                      .toLowerCase()
+                      .startsWith(fromCity),
+              orElse: () => null);
+          final toMatch = availableStops.cast<String?>().firstWhere(
+              (s) =>
+                  s != null &&
+                  FareTable.extractPlaceName(s)
+                      .toLowerCase()
+                      .startsWith(toCity),
+              orElse: () => null);
+          if (fromMatch != null) fromLocation = fromMatch;
+          if (toMatch != null) toLocation = toMatch;
+        });
+      }
+    } catch (e) {
+      debugPrint('[HomeScreen] Error refreshing active schedule context: $e');
+      if (!mounted) return;
+      setState(() {
+        _activeScheduleTimeKey = '';
+        _activeRouteDirectionKey = '';
+      });
+    }
+  }
+
   List<Map<String, dynamic>> _normalizeActiveBookingAlerts(
       List<Map<String, dynamic>> alerts) {
+    const trackedBookingIds = {
+      '0OhBkgEAYh35UgwtMXU3',
+      'q1MWmuqcMNKKns4wtFwl',
+    };
+
     final sorted = List<Map<String, dynamic>>.from(alerts)
       ..sort((a, b) => ((b['receivedAtMs'] as int?) ?? 0)
           .compareTo((a['receivedAtMs'] as int?) ?? 0));
@@ -161,22 +201,101 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final list = <Map<String, dynamic>>[];
 
-    final assignedBus = (_assignedBus ?? '').trim().toUpperCase();
+    bool shouldLogBooking(Map<String, dynamic> item) {
+      final bookingId = (item['bookingId'] ?? '').toString().trim();
+      return trackedBookingIds.contains(bookingId);
+    }
+
+    void logBookingDecision(Map<String, dynamic> item, String decision,
+        {String details = ''}) {
+      if (!shouldLogBooking(item)) return;
+      final bookingId = (item['bookingId'] ?? '').toString().trim();
+      final status = (item['status'] ?? '').toString().trim().toLowerCase();
+      final origin = (item['origin'] ?? '').toString().trim();
+      final destination = (item['destination'] ?? '').toString().trim();
+      final itemScheduleKey = _extractAlertScheduleKey(item);
+      final activeScheduleKey = _activeScheduleTimeKey;
+      final activeDirection = (_activeRouteDirectionKey.isNotEmpty
+              ? _activeRouteDirectionKey
+              : routeDirection)
+          .trim()
+          .toLowerCase();
+      debugPrint(
+        '[BookingFilter][Home] bookingId=$bookingId decision=$decision '
+        'status=$status activeDir=$activeDirection origin="$origin" '
+        'destination="$destination" activeSchedule="$activeScheduleKey" '
+        'itemSchedule="$itemScheduleKey" $details',
+      );
+    }
+
+    String? routeRejectReason(Map<String, dynamic> item) {
+      final activeDirection = (_activeRouteDirectionKey.isNotEmpty
+              ? _activeRouteDirectionKey
+              : routeDirection)
+          .trim()
+          .toLowerCase();
+      if (activeDirection.isEmpty) return 'missing_active_direction';
+
+      final originRaw =
+          (item['origin'] ?? item['from'] ?? item['fromLocation'] ?? '')
+              .toString()
+              .trim();
+      final destinationRaw =
+          (item['destination'] ?? item['to'] ?? item['toLocation'] ?? '')
+              .toString()
+              .trim();
+
+      if (originRaw.isNotEmpty && destinationRaw.isNotEmpty) {
+        final stationList =
+            route_validator.RouteValidator.getStationListForDirection(
+                activeDirection);
+        final origin = QRValidationService.resolveStationName(originRaw);
+        final destination =
+            QRValidationService.resolveStationName(destinationRaw);
+        final originIndex = route_validator.RouteValidator.findStationIndex(
+            origin, stationList);
+        final destinationIndex =
+            route_validator.RouteValidator.findStationIndex(
+                destination, stationList);
+
+        if (originIndex >= 0 && destinationIndex >= 0) {
+          if (originIndex < destinationIndex) return null;
+          return 'route_station_order_mismatch';
+        }
+      }
+
+      final itemDirection = _deriveRouteDirectionFromText(
+        (item['busRoute'] ?? item['routeName'] ?? item['route'] ?? '')
+            .toString(),
+      );
+      if (itemDirection.isNotEmpty) {
+        if (itemDirection == activeDirection) return null;
+        return 'route_direction_mismatch';
+      }
+
+      return 'route_unresolved';
+    }
 
     for (final item in latestByBooking.values) {
       final origin = (item['origin'] ?? '').toString().trim();
       final seats = int.tryParse((item['seats'] ?? '').toString()) ?? 0;
       final status = (item['status'] ?? '').toString().trim().toLowerCase();
-      final itemBus = (item['busNumber'] ?? '').toString().trim().toUpperCase();
 
-      if (origin.isEmpty || seats <= 0) continue;
-      if (status.isNotEmpty && status != 'waiting') continue;
-      // Enforce bus-scoped alerts only when incoming alert contains busNumber.
-      if (assignedBus.isNotEmpty &&
-          itemBus.isNotEmpty &&
-          itemBus != assignedBus) {
+      if (origin.isEmpty || seats <= 0) {
+        logBookingDecision(item, 'reject',
+            details: 'reason=missing_origin_or_seats');
         continue;
       }
+      if (status != 'waiting') {
+        logBookingDecision(item, 'reject', details: 'reason=not_waiting');
+        continue;
+      }
+      final routeReason = routeRejectReason(item);
+      if (routeReason != null) {
+        logBookingDecision(item, 'reject', details: 'reason=$routeReason');
+        continue;
+      }
+      logBookingDecision(item, 'accept');
       list.add(item);
     }
 
@@ -185,14 +304,21 @@ class _HomeScreenState extends State<HomeScreen> {
       final origin = (item['origin'] ?? '').toString().trim();
       final seats = int.tryParse((item['seats'] ?? '').toString()) ?? 0;
       final status = (item['status'] ?? '').toString().trim().toLowerCase();
-      final itemBus = (item['busNumber'] ?? '').toString().trim().toUpperCase();
-      if (origin.isEmpty || seats <= 0) continue;
-      if (status.isNotEmpty && status != 'waiting') continue;
-      if (assignedBus.isNotEmpty &&
-          itemBus.isNotEmpty &&
-          itemBus != assignedBus) {
+      if (origin.isEmpty || seats <= 0) {
+        logBookingDecision(item, 'reject',
+            details: 'reason=missing_origin_or_seats');
         continue;
       }
+      if (status != 'waiting') {
+        logBookingDecision(item, 'reject', details: 'reason=not_waiting');
+        continue;
+      }
+      final routeReason = routeRejectReason(item);
+      if (routeReason != null) {
+        logBookingDecision(item, 'reject', details: 'reason=$routeReason');
+        continue;
+      }
+      logBookingDecision(item, 'accept');
       list.add(item);
     }
 
@@ -226,6 +352,72 @@ class _HomeScreenState extends State<HomeScreen> {
       return int.tryParse(match.group(1) ?? '') ?? -1;
     }
     return -1;
+  }
+
+  String _extractAlertScheduleKey(Map<String, dynamic> item) {
+    return _normalizeScheduleKey(
+      (item['ScheduledTimeStr'] ??
+          item['scheduledTimeStr'] ??
+          item['ScheduleTime'] ??
+          item['ScheduleTIme'] ??
+          item['scheduleTime'] ??
+          item['scheduledTime'] ??
+          item['scheduledTimeSTR']),
+    );
+  }
+
+  String _deriveRouteDirectionFromText(String raw) {
+    final text = raw.trim().toLowerCase();
+    if (text.isEmpty) return '';
+
+    if (text.contains('nasugbu') && text.contains('batangas')) {
+      final nasugbuIdx = text.indexOf('nasugbu');
+      final batangasIdx = text.indexOf('batangas');
+      if (nasugbuIdx < batangasIdx) return 'north_to_south';
+      if (batangasIdx < nasugbuIdx) return 'south_to_north';
+    }
+
+    if (text.contains('north_to_south') || text.contains('north to south')) {
+      return 'north_to_south';
+    }
+    if (text.contains('south_to_north') || text.contains('south to north')) {
+      return 'south_to_north';
+    }
+
+    return '';
+  }
+
+  String _normalizeScheduleKey(dynamic raw) {
+    if (raw == null) return '';
+
+    if (raw is Timestamp) {
+      return _formatScheduleMinuteKey(raw.toDate());
+    }
+
+    if (raw is DateTime) {
+      return _formatScheduleMinuteKey(raw);
+    }
+
+    final text = raw.toString().trim();
+    if (text.isEmpty) return '';
+
+    final asDate = DateTime.tryParse(text) ??
+        DateTime.tryParse(text.replaceFirst(' ', 'T'));
+    if (asDate != null) {
+      return _formatScheduleMinuteKey(asDate);
+    }
+
+    return text.toLowerCase();
+  }
+
+  String _formatScheduleMinuteKey(DateTime dt) {
+    final local = dt.toLocal();
+    final y = local.year.toString().padLeft(4, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    final h = local.hour.toString().padLeft(2, '0');
+    final min = local.minute.toString().padLeft(2, '0');
+    return '$y-$m-$d $h:$min';
   }
 
   @override
@@ -428,18 +620,6 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
           ListTile(
-            title: const Text("BOOKING ALERTS"),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const BookingAlertsScreen(),
-                ),
-              );
-            },
-          ),
-          ListTile(
             title: const Text("PASSENGERS"),
             onTap: () {
               Navigator.pop(context);
@@ -543,7 +723,7 @@ class _HomeScreenState extends State<HomeScreen> {
       double screenW, double screenH, BuildContext context) {
     return Container(
       width: double.infinity,
-      constraints: BoxConstraints(minHeight: screenH * 0.24),
+      constraints: BoxConstraints(minHeight: screenH * 0.42),
       padding: EdgeInsets.all(screenW * 0.03),
       decoration: BoxDecoration(
         color: const Color(0xFFE8F5E9),
@@ -574,7 +754,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const BookingAlertsScreen(),
+                      builder: (_) =>
+                          BookingAlertsScreen(routeDirection: routeDirection),
                     ),
                   );
                 },
@@ -596,10 +777,13 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             )
           else
-            ..._activeBookingAlerts.map((item) {
-              final origin = (item['origin'] ?? 'Unknown origin').toString();
+            ..._activeBookingAlerts.asMap().entries.map((entry) {
+              final rank = entry.key + 1;
+              final item = entry.value;
+              final origin = _stripStationPrefix(
+                (item['origin'] ?? 'Unknown origin').toString(),
+              );
               final seats = (item['seats'] ?? 0).toString();
-              final station = (item['station'] ?? '').toString().trim();
               final bookingId = (item['bookingId'] ?? '').toString().trim();
 
               return Container(
@@ -615,6 +799,27 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: Row(
                   children: [
+                    Container(
+                      margin: const EdgeInsets.only(right: 10),
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: rank == 1
+                            ? Colors.green.shade700
+                            : Colors.green.shade300,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$rank',
+                        style: TextStyle(
+                          color:
+                              rank == 1 ? Colors.white : Colors.green.shade900,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -638,24 +843,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                     ),
-                    if (station.isNotEmpty)
-                      Container(
-                        margin: const EdgeInsets.only(right: 8),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade100,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Text(
-                          'STN $station',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.orange.shade900,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 6),
@@ -678,6 +865,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  String _stripStationPrefix(String value) {
+    return value.replaceFirst(RegExp(r'^\s*\d+\.\s*'), '').trim();
   }
 
   /// Passenger Type UI
@@ -768,28 +959,94 @@ class _HomeScreenState extends State<HomeScreen> {
   /// BOOKINGS IN WAITING Button
   Widget _buildBookingsInWaitingButton(
       double screenH, double screenW, BuildContext context) {
+    final incomingCount = _activeBookingAlerts.length;
+    final hasIncoming = incomingCount > 0;
+
     return SizedBox(
       height: screenH * 0.150,
-      child: OutlinedButton(
-        onPressed: () => _showBookingsDialog(context, screenW, screenH),
-        style: OutlinedButton.styleFrom(
-          side: BorderSide(color: Colors.green.shade700),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.list_alt, color: Colors.green[700]),
-              const SizedBox(width: 8),
-              const Text(
-                'BOOKINGS',
-                style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-        ),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: hasIncoming ? 1 : 0),
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeInOut,
+        builder: (context, glow, child) {
+          final borderColor = Color.lerp(
+            Colors.green.shade700,
+            Colors.orange.shade500,
+            glow * 0.35,
+          )!;
+
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              boxShadow: hasIncoming
+                  ? [
+                      BoxShadow(
+                        color:
+                            Colors.orange.withAlpha((56 + (31 * glow)).round()),
+                        blurRadius: 12 + (10 * glow),
+                        spreadRadius: 1.2 + (1.5 * glow),
+                        offset: const Offset(0, 2),
+                      )
+                    ]
+                  : const [],
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: OutlinedButton(
+                    onPressed: () =>
+                        _showBookingsDialog(context, screenW, screenH),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                          color: borderColor, width: hasIncoming ? 2 : 1.2),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6)),
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.list_alt, color: Colors.green[700]),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'BOOKINGS',
+                            style: TextStyle(
+                                fontSize: 30, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (hasIncoming)
+                  Positioned(
+                    top: -8,
+                    right: -8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade600,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: Text(
+                        '$incomingCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -801,17 +1058,17 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (_) {
         return Dialog(
           insetPadding: EdgeInsets.symmetric(
-              horizontal: screenW * 0.02, vertical: screenH * 0.10),
+              horizontal: screenW * 0.01, vertical: screenH * 0.04),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: screenW * 0.98,
-              maxHeight: screenH * 0.9,
+              maxWidth: screenW * 0.99,
+              maxHeight: screenH * 0.94,
             ),
             child: SingleChildScrollView(
               child: Padding(
-                padding: const EdgeInsets.all(12.0),
+                padding: const EdgeInsets.all(16.0),
                 child: _buildActiveBookingsPanel(screenW, screenH, context),
               ),
             ),

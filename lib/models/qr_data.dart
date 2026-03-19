@@ -51,12 +51,25 @@ class QRData {
       // Accept several possible field names produced by different QR generators
       // Normalize bus number to avoid mismatch due to casing/whitespace/control chars
       assignedBusNumber: _normalizeBusNumber(
-        (map['assignedBusNumber'] ?? map['busNumber'] ?? map['busNo'] ?? map['vehicleNo'])?.toString() ?? '',
+        (map['assignedBusNumber'] ??
+                    map['busNumber'] ??
+                    map['busNo'] ??
+                    map['vehicleNo'])
+                ?.toString() ??
+            '',
       ),
       passengerName: map['passengerName']?.toString() ?? '',
-      numberOfPassengers: (map['numberOfPassengers'] is int) ? map['numberOfPassengers'] as int : int.tryParse(map['numberOfPassengers']?.toString() ?? '1') ?? 1,
-      bookingDate: map['bookingDate'] is DateTime ? map['bookingDate'] as DateTime : DateTime.tryParse(map['bookingDate']?.toString() ?? '') ?? DateTime.now(),
-      expiresAt: map['expiresAt'] is DateTime ? map['expiresAt'] as DateTime : DateTime.tryParse(map['expiresAt']?.toString() ?? '') ?? DateTime.now(),
+      numberOfPassengers: (map['numberOfPassengers'] is int)
+          ? map['numberOfPassengers'] as int
+          : int.tryParse(map['numberOfPassengers']?.toString() ?? '1') ?? 1,
+      bookingDate: map['bookingDate'] is DateTime
+          ? map['bookingDate'] as DateTime
+          : DateTime.tryParse(map['bookingDate']?.toString() ?? '') ??
+              DateTime.now(),
+      expiresAt: map['expiresAt'] is DateTime
+          ? map['expiresAt'] as DateTime
+          : DateTime.tryParse(map['expiresAt']?.toString() ?? '') ??
+              DateTime.now(),
     );
   }
 
@@ -65,22 +78,22 @@ class QRData {
     // First, normalize all keys to lowercase for comparison
     final normalizedMap = <String, dynamic>{};
     map.forEach((k, v) {
-      final normalizedKey = k.toString().toLowerCase().replaceAll(RegExp(r'[_\s]'), '');
+      final normalizedKey =
+          k.toString().toLowerCase().replaceAll(RegExp(r'[_\s]'), '');
       normalizedMap[normalizedKey] = v;
     });
-    
+
     // Try to find fare value with different key names
-    final fareValue = 
-      normalizedMap['fareAmount'] ?? 
-      normalizedMap['fare'] ?? 
-      normalizedMap['amount'] ?? 
-      normalizedMap['price'] ?? 
-      normalizedMap['fareamount'] ??
-      map['fareAmount'] ?? 
-      map['fare'] ?? 
-      map['amount'] ?? 
-      map['price'];
-    
+    final fareValue = normalizedMap['fareAmount'] ??
+        normalizedMap['fare'] ??
+        normalizedMap['amount'] ??
+        normalizedMap['price'] ??
+        normalizedMap['fareamount'] ??
+        map['fareAmount'] ??
+        map['fare'] ??
+        map['amount'] ??
+        map['price'];
+
     if (fareValue is num) {
       return fareValue.toDouble();
     }
@@ -91,7 +104,9 @@ class QRData {
     // Trim and uppercase
     var s = raw.trim().toUpperCase();
     // Remove surrounding quotes if present
-    if (s.length > 1 && ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))) {
+    if (s.length > 1 &&
+        ((s.startsWith('"') && s.endsWith('"')) ||
+            (s.startsWith("'") && s.endsWith("'")))) {
       s = s.substring(1, s.length - 1);
     }
     // Remove invisible/control characters

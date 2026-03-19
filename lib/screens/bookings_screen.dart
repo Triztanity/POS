@@ -312,6 +312,8 @@ class _BookingsScreenState extends State<BookingsScreen> {
 
   /// Proceed with marking booking as dropped-off
   void _proceedWithDropoff(Booking booking) async {
+    final previousStatus = booking.status;
+    final previousDropoffTimestamp = booking.dropoffTimestamp;
     try {
       // Show confirmation dialog
       final confirm = await showDialog<bool>(
@@ -359,20 +361,28 @@ class _BookingsScreenState extends State<BookingsScreen> {
       );
 
       if (mounted) {
-        if (result['success'] == true) {
+        final confirmedFirebase =
+            result['success'] == true && result['channel'] == 'firebase';
+        if (confirmedFirebase) {
           await Dialogs.showMessage(
-              context, 'Success', 'Drop-off status update queued/sent.');
+              context, 'Success', 'Drop-off status updated in Firebase.');
         } else {
+          booking.status = previousStatus;
+          booking.dropoffTimestamp = previousDropoffTimestamp;
+          _bookingManager.updateBooking(booking);
           await Dialogs.showMessage(
             context,
-            'Failed',
-            'Failed to send SMS: ${result['message'] ?? 'Unknown error'}',
+            'Pending',
+            'Drop-off was not confirmed in Firebase yet. Status was not locked.\n\n${result['message'] ?? 'Please retry once online.'}',
           );
         }
         setState(() {});
       }
     } catch (e) {
       debugPrint('[Bookings] Error in proceed: $e');
+      booking.status = previousStatus;
+      booking.dropoffTimestamp = previousDropoffTimestamp;
+      _bookingManager.updateBooking(booking);
       if (mounted) {
         await Dialogs.showMessage(context, 'Error', 'Error: $e');
       }

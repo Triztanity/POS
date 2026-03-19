@@ -33,8 +33,26 @@ service cloud.firestore {
     // BOOKINGS
     // ============================================================
     match /bookings/{bookingId} {
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
-      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if (request.auth != null && request.auth.uid == request.resource.data.userId) || isPosDevice();
+      allow read: if true;
+      allow update, delete: if (request.auth != null && request.auth.uid == resource.data.userId) || isPosDevice();
+    }
+
+    // ============================================================
+    // BOOKINGS_NEW
+    // ============================================================
+    match /bookings_new/{bookingId} {
+      allow create: if (request.auth != null && request.auth.uid == request.resource.data.userId) || isPosDevice();
+      allow read: if true;
+      allow update, delete: if (request.auth != null && request.auth.uid == resource.data.userId) || isPosDevice();
+    }
+
+    // ============================================================
+    // BOOKINGS_ARCHIVE
+    // ============================================================
+    match /bookings_archive/{bookingId} {
+      allow read: if true;
+      allow create, update, delete: if isPosDevice();
     }
 
     // ============================================================
