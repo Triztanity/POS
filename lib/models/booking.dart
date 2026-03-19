@@ -53,6 +53,12 @@ class Booking {
   }
 
   factory Booking.fromMap(Map<String, dynamic> m) {
+    final rawPassengers =
+        m['passengers'] ?? m['numberOfPassengers'] ?? m['passengerCount'];
+    final parsedPassengers = (rawPassengers is int)
+        ? rawPassengers
+        : int.tryParse(rawPassengers?.toString() ?? '0') ?? 0;
+
     return Booking(
       id: m['id']?.toString() ?? '',
       passengerName: m['passengerName']?.toString() ?? '',
@@ -60,35 +66,16 @@ class Booking {
       route: m['route']?.toString() ?? '',
       date: m['date']?.toString() ?? '',
       time: m['time']?.toString() ?? '',
-      passengers: _parsePassengerCount(m),
+      passengers: parsedPassengers > 0 ? parsedPassengers : 1,
       fromLocation: m['fromLocation']?.toString() ?? '',
       toLocation: m['toLocation']?.toString() ?? '',
       passengerType: m['passengerType']?.toString() ?? 'REGULAR',
-      amount: (m['amount'] is num) ? (m['amount'] as num).toDouble() : double.tryParse(m['amount']?.toString() ?? '0') ?? 0.0,
+      amount: (m['amount'] is num)
+          ? (m['amount'] as num).toDouble()
+          : double.tryParse(m['amount']?.toString() ?? '0') ?? 0.0,
       status: m['status']?.toString() ?? 'on-board',
       dropoffTimestamp: m['dropoffTimestamp']?.toString(),
     );
-  }
-
-  static int _parsePassengerCount(Map<String, dynamic> map) {
-    final raw = map['passengers'] ??
-        map['numberOfPassengers'] ??
-        map['passengerCount'] ??
-        map['qty'] ??
-        map['quantity'];
-
-    int parsed = 1;
-    if (raw is int) {
-      parsed = raw;
-    } else if (raw is num) {
-      parsed = raw.round();
-    } else {
-      final text = raw?.toString().trim() ?? '';
-      parsed = int.tryParse(text) ?? double.tryParse(text)?.round() ?? 1;
-    }
-
-    // Booking passenger count should never be below 1 in UI summaries.
-    return parsed < 1 ? 1 : parsed;
   }
 }
 
@@ -115,7 +102,8 @@ class BookingManager {
       final conductor = AppState.instance.conductor;
       final uid = conductor?['uid']?.toString();
       if (uid != null && uid.isNotEmpty) {
-        LocalStorage.saveBookingsForConductor(uid, _bookings.map((b) => b.toMap()).toList());
+        LocalStorage.saveBookingsForConductor(
+            uid, _bookings.map((b) => b.toMap()).toList());
       }
     } catch (_) {}
   }
@@ -129,13 +117,12 @@ class BookingManager {
         final conductor = AppState.instance.conductor;
         final uid = conductor?['uid']?.toString();
         if (uid != null && uid.isNotEmpty) {
-          LocalStorage.saveBookingsForConductor(uid, _bookings.map((b) => b.toMap()).toList());
+          LocalStorage.saveBookingsForConductor(
+              uid, _bookings.map((b) => b.toMap()).toList());
         }
       } catch (_) {}
     }
   }
-
-
 
   /// Load persisted bookings for a conductor UID (merge with existing in-memory bookings)
   void loadForConductor(String conductorUid) {

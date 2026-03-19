@@ -52,6 +52,7 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
     final passengerCount = widget.qrData.numberOfPassengers > 0
         ? widget.qrData.numberOfPassengers
         : 1;
+    final qrFareRaw = widget.qrData.fareAmount;
     final normalizedOrigin = widget.qrData.origin
         .replaceAll(RegExp(r'^\d+\.\s*'), '')
         .trim()
@@ -76,45 +77,53 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
       quantity: passengerCount,
     ).toDouble();
 
-    if (regularFare > 0) {
-      originalFare = regularFare;
-      if (normalizedPassengerType == 'REGULAR') {
-        finalFare = originalFare;
-      } else {
-        finalFare = selectedFare > 0 ? selectedFare : originalFare;
-      }
-      discountAmount = originalFare - finalFare;
+    // Keep QR fare as the booking's original amount whenever available.
+    // This prevents the displayed "Original Fare" from changing (e.g., 64 -> 50)
+    // when passenger type is selected.
+    final baselineRegularFare = qrFareRaw > 0 ? qrFareRaw : regularFare;
+
+    // Resolve a fare table row from the baseline's per-seat value when possible.
+    final perSeatBaseline = passengerCount > 0
+        ? (baselineRegularFare / passengerCount)
+        : baselineRegularFare;
+    final baselineEntry = FareTable.getEntryByFare(perSeatBaseline);
+
+    // Regular must never be discounted.
+    if (normalizedPassengerType == 'REGULAR') {
+      originalFare = baselineRegularFare > 0 ? baselineRegularFare : qrFareRaw;
+      finalFare = originalFare;
+      discountAmount = 0;
       return;
     }
 
-    // Fallback when station mapping fails: preserve QR fare as baseline.
-    final qrFare = widget.qrData.fareAmount;
-    if (qrFare > 0) {
-      originalFare = qrFare;
-      if (normalizedPassengerType == 'REGULAR') {
-        finalFare = originalFare;
-      } else {
-        finalFare = selectedFare > 0 ? selectedFare : originalFare;
-      }
-      discountAmount = originalFare - finalFare;
+    if (baselineRegularFare <= 0) {
+      originalFare = 0;
+      finalFare = 0;
+      discountAmount = 0;
       return;
     }
 
-    // Final fallback: use selected fare calculation result if available.
-    final calculatedFare = BookingFareCalculator.calculateFare(
-      origin: widget.qrData.origin
-          .replaceAll(RegExp(r'^\d+\.\s*'), '')
-          .trim()
-          .toUpperCase(),
-      destination: widget.qrData.destination
-          .replaceAll(RegExp(r'^\d+\.\s*'), '')
-          .trim()
-          .toUpperCase(),
-      passengerType: normalizedPassengerType,
-      quantity: passengerCount,
-    );
-    finalFare = calculatedFare.toDouble();
-    originalFare = normalizedPassengerType == 'REGULAR' ? finalFare : 0;
+    // For discounted types, compute from the baseline amount and never exceed regular.
+    double computedDiscountedFare = 0;
+    if (baselineEntry != null) {
+      computedDiscountedFare =
+          baselineEntry.discount.toDouble() * passengerCount;
+    } else if (selectedFare > 0 && regularFare > 0) {
+      final discountRatio = (selectedFare / regularFare).clamp(0.0, 1.0);
+      computedDiscountedFare = baselineRegularFare * discountRatio;
+    } else {
+      // Conservative fallback: 20% discount for non-regular when no fare row is found.
+      computedDiscountedFare = baselineRegularFare * 0.80;
+    }
+
+    originalFare = baselineRegularFare;
+    if (computedDiscountedFare > 0) {
+      finalFare = computedDiscountedFare < originalFare
+          ? computedDiscountedFare
+          : originalFare;
+    } else {
+      finalFare = originalFare;
+    }
     discountAmount = originalFare - finalFare;
   }
 

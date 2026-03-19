@@ -470,7 +470,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Get current route display string
   String getRouteDisplay() {
-    return '$fromLocation → $toLocation';
+    if (routeDirection == 'north_to_south') {
+      return 'Nasugbu to Batangas';
+    }
+    if (routeDirection == 'south_to_north') {
+      return 'Batangas to Nasugbu';
+    }
+    return 'Unknown';
   }
 
   double get fare {

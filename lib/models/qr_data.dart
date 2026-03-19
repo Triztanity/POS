@@ -59,7 +59,7 @@ class QRData {
             '',
       ),
       passengerName: map['passengerName']?.toString() ?? '',
-        numberOfPassengers: _parsePassengerCount(map),
+      numberOfPassengers: _parsePassengerCount(map),
       bookingDate: map['bookingDate'] is DateTime
           ? map['bookingDate'] as DateTime
           : DateTime.tryParse(map['bookingDate']?.toString() ?? '') ??
@@ -99,24 +99,51 @@ class QRData {
   }
 
   static int _parsePassengerCount(Map<String, dynamic> map) {
-    // Support different payload conventions from booking producers.
-    final raw = map['numberOfPassengers'] ??
+    final normalizedMap = <String, dynamic>{};
+    map.forEach((k, v) {
+      final normalizedKey =
+          k.toString().toLowerCase().replaceAll(RegExp(r'[_\s]'), '');
+      normalizedMap[normalizedKey] = v;
+    });
+
+    final rawCount = normalizedMap['numberofpassengers'] ??
+        normalizedMap['passengers'] ??
+        normalizedMap['passengercount'] ??
+        normalizedMap['quantity'] ??
+        normalizedMap['qty'] ??
+        normalizedMap['seats'] ??
+        map['numberOfPassengers'] ??
         map['passengers'] ??
         map['passengerCount'] ??
+        map['quantity'] ??
         map['qty'] ??
-        map['quantity'];
+        map['seats'];
 
-    int parsed = 1;
-    if (raw is int) {
-      parsed = raw;
-    } else if (raw is num) {
-      parsed = raw.round();
-    } else {
-      final text = raw?.toString().trim() ?? '';
-      parsed = int.tryParse(text) ?? double.tryParse(text)?.round() ?? 1;
+    // Firebase bookings may send `seats` as an array (e.g. ['Seat 1', 'Seat 2']).
+    if (rawCount is List) {
+      return rawCount.isNotEmpty ? rawCount.length : 1;
     }
 
-    return parsed < 1 ? 1 : parsed;
+    if (rawCount is num) {
+      final parsedNum = rawCount.toInt();
+      return parsedNum > 0 ? parsedNum : 1;
+    }
+
+    final parsed = int.tryParse(rawCount?.toString() ?? '') ?? 0;
+    if (parsed > 0) return parsed;
+
+    // Fallback for comma-separated seat labels in string form.
+    final seatsValue = map['seats'];
+    if (seatsValue is String && seatsValue.trim().isNotEmpty) {
+      final parts = seatsValue
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (parts.isNotEmpty) return parts.length;
+    }
+
+    return 1;
   }
 
   static String _normalizeBusNumber(String raw) {

@@ -7,7 +7,11 @@ class FareEntry {
   final int fare;
   final int discount;
 
-  FareEntry({required this.place, required this.km, required this.fare, required this.discount});
+  FareEntry(
+      {required this.place,
+      required this.km,
+      required this.fare,
+      required this.discount});
 }
 
 class FareTable {
@@ -88,29 +92,38 @@ class FareTable {
     FareEntry(place: 'BATANGAS TERMINAL', km: 70, fare: 158, discount: 126),
   ];
 
-  static List<String> get placeNames =>
-      entries.where((e) => e.place.isNotEmpty).map((e) => e.place).toSet().toList();
+  static List<String> get placeNames => entries
+      .where((e) => e.place.isNotEmpty)
+      .map((e) => e.place)
+      .toSet()
+      .toList();
 
   static FareEntry? getEntryByPlace(String place) {
     try {
       final normalizedInput = normalizePlaceName(place);
-      
+
       // Try exact match with normalized names
       var entry = entries.firstWhere(
-        (e) => normalizePlaceName(e.place) == normalizedInput && e.place.isNotEmpty,
+        (e) =>
+            normalizePlaceName(e.place) == normalizedInput &&
+            e.place.isNotEmpty,
         orElse: () => FareEntry(place: '', km: 0, fare: 0, discount: 0),
       );
       if (entry.place.isNotEmpty) return entry;
       // Tokenize for safer matching (avoid false positives from substring checks)
       final cleanPlace = normalizedInput;
-      final inputWords = cleanPlace.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      final inputWords =
+          cleanPlace.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
 
       // Match where all words of the fare table place appear in the input (e.g., "NASUGBU TERMINAL" -> "NASUGBU")
       entry = entries.firstWhere(
         (e) {
           if (e.place.isEmpty) return false;
           final candidate = normalizePlaceName(e.place);
-          final candWords = candidate.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+          final candWords = candidate
+              .split(RegExp(r'\s+'))
+              .where((w) => w.isNotEmpty)
+              .toList();
           // all candidate words must be present in inputWords
           return candWords.every((cw) => inputWords.contains(cw));
         },
@@ -124,7 +137,10 @@ class FareTable {
           if (e.place.isEmpty) return false;
           final candidate = normalizePlaceName(e.place);
           // check if inputWords are all contained in candidate words
-          final candWords = candidate.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+          final candWords = candidate
+              .split(RegExp(r'\s+'))
+              .where((w) => w.isNotEmpty)
+              .toList();
           return inputWords.every((iw) => candWords.contains(iw));
         },
         orElse: () => FareEntry(place: '', km: 0, fare: 0, discount: 0),
@@ -157,9 +173,7 @@ class FareTable {
         }
       }
     }
-    return uniquePlaces.entries
-        .map((e) => '${e.value}|${e.key}')
-        .toList();
+    return uniquePlaces.entries.map((e) => '${e.value}|${e.key}').toList();
   }
 
   /// Extract place name from formatted string "km|Place"
@@ -190,9 +204,12 @@ class FareTable {
   /// Examples: "1. LIAN" -> "LIAN", "2|LIAN" -> "LIAN", "MAHAYAHAY 7-11" -> "MAHAYAHAY 711", "LIAN" -> "LIAN"
   static String normalizePlaceName(String place) {
     return place
-        .replaceAll(RegExp(r'^[\d\.\|\s]+'), '') // Remove leading numbers, dots, pipes, spaces
-        .replaceAll('-', ' ') // Convert hyphens to spaces for token-based matching
-        .replaceAll(RegExp(r'\s+'), ' ') // Collapse multiple spaces to single space
+        .replaceAll(RegExp(r'^[\d\.\|\s]+'),
+            '') // Remove leading numbers, dots, pipes, spaces
+        .replaceAll(
+            '-', ' ') // Convert hyphens to spaces for token-based matching
+        .replaceAll(
+            RegExp(r'\s+'), ' ') // Collapse multiple spaces to single space
         .trim()
         .toUpperCase();
   }
@@ -204,7 +221,7 @@ class FareTable {
       return null;
     }
   }
-  
+
   /// Find a fare table entry by its exact fare value (uses rounded int match)
   static FareEntry? getEntryByFare(double fare) {
     try {
@@ -229,8 +246,9 @@ class FareCalculator {
     final kmTraveled = (originEntry.km - destEntry.km).abs();
     final fareEntry = FareTable.getEntryByKm(kmTraveled);
     if (fareEntry == null) return 0;
-    final farePerPassenger =
-        passengerType.toLowerCase() == 'regular' ? fareEntry.fare : fareEntry.discount;
+    final farePerPassenger = passengerType.toLowerCase() == 'regular'
+        ? fareEntry.fare
+        : fareEntry.discount;
     return farePerPassenger * quantity;
   }
 }
@@ -292,7 +310,7 @@ class BookingFareCalculator {
     'CITIMART BAUAN',
     'SAN ANTONIO',
     'SAN PASCUAL',
-    'STA. RITA BRGY. HALL'
+    'STA. RITA BRGY. HALL',
     'COMPLEX',
     'DIVERSION NTC',
     'BATANGAS GRAND TERMINAL',
@@ -308,38 +326,37 @@ class BookingFareCalculator {
   }) {
     final cleanOrigin = origin.trim().toUpperCase();
     final cleanDestination = destination.trim().toUpperCase();
-    
+
     // Find indices using fuzzy matching (handles formatting differences)
     final originIndex = _findStationIndex(cleanOrigin);
     final destIndex = _findStationIndex(cleanDestination);
-    
+
     if (originIndex == -1 || destIndex == -1) {
       // Stations not found
       return 0;
     }
-    
+
     // Calculate KM distance
     final kmTraveled = (originIndex - destIndex).abs();
-    
+
     // Get fare entry for this distance
     final fareEntry = FareTable.getEntryByKm(kmTraveled);
     if (fareEntry == null) return 0;
-    
+
     // Calculate based on passenger type
-    final farePerPassenger = 
-        passengerType.toLowerCase() == 'regular' ? fareEntry.fare : fareEntry.discount;
-    
+    final farePerPassenger = passengerType.toLowerCase() == 'regular'
+        ? fareEntry.fare
+        : fareEntry.discount;
+
     return farePerPassenger * quantity;
   }
 
   /// Find a station index with fuzzy matching to handle formatting differences
   static int _findStationIndex(String stationName) {
     // Normalize the input: replace hyphens with spaces, remove extra spaces
-    final normalizedInput = stationName
-        .replaceAll('-', ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    
+    final normalizedInput =
+        stationName.replaceAll('-', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+
     // Try exact match first after normalization
     for (int i = 0; i < bookingStations.length; i++) {
       final normalizedStation = bookingStations[i]
@@ -350,7 +367,7 @@ class BookingFareCalculator {
         return i;
       }
     }
-    
+
     // Try partial/substring matches for partial station names
     // e.g., "BATANGAS TERMINAL" should match "BATANGAS GRAND TERMINAL"
     for (int i = 0; i < bookingStations.length; i++) {
@@ -359,7 +376,7 @@ class BookingFareCalculator {
           .replaceAll(RegExp(r'\s+'), ' ')
           .trim()
           .toUpperCase();
-      
+
       // Check if the station contains all the words from the input
       final inputWords = normalizedInput.split(' ');
       bool allWordsMatch = true;
@@ -369,12 +386,12 @@ class BookingFareCalculator {
           break;
         }
       }
-      
+
       if (allWordsMatch && inputWords.isNotEmpty) {
         return i;
       }
     }
-    
+
     // No match found
     return -1;
   }
