@@ -601,19 +601,6 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
           ListTile(
-            title: const Text("TICKET"),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => HomeScreen(
-                        routeDirection: routeDirection,
-                        conductor: widget.conductor)),
-              );
-            },
-          ),
-          ListTile(
             title: const Text("BOOKINGS"),
             onTap: () {
               Navigator.pop(context);
