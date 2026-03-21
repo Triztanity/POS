@@ -66,12 +66,41 @@ class _LoginScreenState extends State<LoginScreen> {
         .collection('schedules')
         .where('busNumber', isEqualTo: bus)
         .where('status', whereIn: ['pre-departure', 'departed'])
-        .limit(1)
         .snapshots()
         .listen((snapshot) {
       if (!mounted) return;
       if (snapshot.docs.isNotEmpty) {
-        final data = snapshot.docs.first.data();
+        final docs = snapshot.docs.toList();
+        
+        docs.sort((a, b) {
+          final dataA = a.data();
+          final dataB = b.data();
+          final sA = (dataA['status'] ?? '').toString().toLowerCase();
+          final sB = (dataB['status'] ?? '').toString().toLowerCase();
+          
+          // 1. Departed takes absolute priority (ongoing trip)
+          if (sA == 'departed' && sB != 'departed') return -1;
+          if (sB == 'departed' && sA != 'departed') return 1;
+
+          // 2. Otherwise sort by scheduledTime (earliest first)
+          final timeA = dataA['scheduledTime'];
+          final timeB = dataB['scheduledTime'];
+          
+          DateTime? dtA;
+          if (timeA is Timestamp) dtA = timeA.toDate();
+          else if (timeA is String) dtA = DateTime.tryParse(timeA);
+
+          DateTime? dtB;
+          if (timeB is Timestamp) dtB = timeB.toDate();
+          else if (timeB is String) dtB = DateTime.tryParse(timeB);
+
+          if (dtA != null && dtB != null) return dtA.compareTo(dtB);
+          if (dtA != null) return -1;
+          if (dtB != null) return 1;
+          return 0;
+        });
+
+        final data = docs.first.data();
         setState(() {
           _schedule = data;
           _loadingSchedule = false;
@@ -198,7 +227,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (routeId == 'south_to_north' || routeId == 'north_to_south') {
         routeDirection = routeId;
       } else {
-        final routeName = (_schedule!['routeName'] ?? '').toString().toLowerCase();
+        final routeName = (_schedule!['route'] ?? _schedule!['routeName'] ?? _schedule!['busRoute'] ?? '').toString().toLowerCase();
         if (routeName.startsWith('batangas')) routeDirection = 'south_to_north';
         if (routeName.startsWith('nasugbu')) routeDirection = 'north_to_south';
       }
@@ -229,7 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
     // Save route
     try {
       final routeId = (_schedule!['routeId'] ?? '').toString();
-      final routeName = (_schedule!['routeName'] ?? '').toString();
+      final routeName = (_schedule!['route'] ?? _schedule!['routeName'] ?? _schedule!['busRoute'] ?? '').toString();
       if (routeId.isNotEmpty || routeName.isNotEmpty) {
         await LocalStorage.setCurrentRoute(routeId, routeName);
       }
@@ -356,7 +385,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final status = (_schedule!['status'] ?? '').toString().toLowerCase();
     final isReady = status == 'departed';
-    final routeName = (_schedule!['routeName'] ?? '').toString();
+    final routeName = (_schedule!['route'] ?? _schedule!['routeName'] ?? _schedule!['busRoute'] ?? '').toString();
     final rawTime = _schedule!['scheduledTime'];
 
     String formattedTime = '';
