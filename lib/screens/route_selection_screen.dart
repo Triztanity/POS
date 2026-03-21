@@ -10,19 +10,18 @@ class RouteSelectionScreen extends StatelessWidget {
       {super.key, this.conductor, this.returnOnSelect = false});
 
   void _selectRoute(BuildContext context, String routeDirection) {
-    // Save this navigation for app resume from recent apps
-    LocalStorage.saveLastScreen('home_screen', {
-      'routeDirection':
-          routeDirection == 'North' ? 'north_to_south' : 'south_to_north'
-    });
+    final directionKey =
+        routeDirection == 'North' ? 'north_to_south' : 'south_to_north';
+    // Persist current route for inspector and reload behavior.
+    LocalStorage.setCurrentRoute(directionKey, routeDirection);
+    LocalStorage.saveLastScreen(
+        'home_screen', {'routeDirection': directionKey});
 
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => HomeScreen(
-            routeDirection:
-                routeDirection == 'North' ? 'north_to_south' : 'south_to_north',
-            conductor: conductor),
+        builder: (_) =>
+            HomeScreen(routeDirection: directionKey, conductor: conductor),
       ),
     );
   }
@@ -87,6 +86,7 @@ class RouteSelectionScreen extends StatelessWidget {
                   GestureDetector(
                     onTap: () {
                       if (returnOnSelect) {
+                        LocalStorage.setCurrentRoute('north_to_south', 'North');
                         Navigator.pop(context, {
                           'routeId': 'north_to_south',
                           'routeName': 'North'
@@ -166,6 +166,7 @@ class RouteSelectionScreen extends StatelessWidget {
                   GestureDetector(
                     onTap: () {
                       if (returnOnSelect) {
+                        LocalStorage.setCurrentRoute('south_to_north', 'South');
                         Navigator.pop(context, {
                           'routeId': 'south_to_north',
                           'routeName': 'South'

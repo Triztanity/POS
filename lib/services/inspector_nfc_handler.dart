@@ -36,10 +36,18 @@ class InspectorNFCHandler {
         final role = user['role']?.toString() ?? '';
         final name = user['name']?.toString() ?? '';
 
-        if (role.toLowerCase() == 'inspector') {
+        // Only allow inspector navigation if logged in (conductor and driver present)
+        final isLoggedIn = AppState.instance.conductor != null &&
+            AppState.instance.driver != null;
+        // Optionally, check for Home screen here if needed
+
+        if (role.toLowerCase() == 'inspector' && isLoggedIn) {
           debugPrint(
               '[INSPECTOR-HANDLER] Inspector card detected! Name=$name, attempting navigation');
           _navigateToInspector();
+        } else if (role.toLowerCase() == 'inspector' && !isLoggedIn) {
+          debugPrint(
+              '[INSPECTOR-HANDLER] Inspector card ignored: not logged in');
         } else {
           debugPrint('[INSPECTOR-HANDLER] Non-inspector card, role=$role');
         }

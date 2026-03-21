@@ -61,6 +61,30 @@ class Inspection {
     };
   }
 
+  /// Small, compact map suitable for uploading to Firestore.
+  Map<String, dynamic> toRemoteMap() {
+    final map = <String, dynamic>{
+      'id': id,
+      'timestamp': timestamp,
+      'busNumber': busNumber,
+      'tripSession': tripSession,
+      'inspectorUid': inspectorUid,
+      'conductorUid': conductorUid,
+      'driverUid': driverUid,
+      'manualPassengerCount': manualPassengerCount,
+      'systemPassengerCount': systemPassengerCount,
+      'isCleared': isCleared,
+    };
+
+    // Only include discrepancyDetected when there is a discrepancy
+    if (!isCleared) {
+      map['discrepancyDetected'] = true;
+      if (comments != null && comments!.isNotEmpty) map['comments'] = comments;
+    }
+
+    return map;
+  }
+
   factory Inspection.fromMap(Map<String, dynamic> m) {
     return Inspection(
       id: m['id']?.toString() ?? '',

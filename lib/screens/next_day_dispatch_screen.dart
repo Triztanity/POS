@@ -144,6 +144,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
     final newTrip = claimedTripId;
 
     await LocalStorage.setCurrentTripId(newTrip);
+    await LocalStorage.setCurrentTripStatus('pre-departure');
     await LocalStorage.setCurrentVehicleNo(assignedBus);
     await LocalStorage.resetTripState(newTrip);
 

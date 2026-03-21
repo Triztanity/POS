@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../local_storage.dart';
 import '../services/app_state.dart';
 import '../models/booking.dart';
-import 'login_screen.dart';
 import 'home_screen.dart';
-import 'next_day_dispatch_screen.dart';
+import 'dispatch_screen.dart';
 
 /// Splash screen: checks for saved session on app start.
 /// If logged in, navigates to last screen or RouteSelectionScreen.
@@ -34,10 +34,45 @@ class _SplashScreenState extends State<SplashScreen> {
       try {
         debugPrint('[SPLASH] Checking for saved session...');
         final savedConductor = LocalStorage.loadCurrentConductor();
+        final currentTripId = LocalStorage.getCurrentTripId();
+        final localTripStatus =
+            LocalStorage.getCurrentTripStatus().trim().toLowerCase();
+        debugPrint('[SPLASH] Local trip status: "$localTripStatus"');
 
-        if (savedConductor != null) {
-          // Session exists — restore conductor to AppState
-          debugPrint('[SPLASH] Found saved session: ${savedConductor['name']}');
+        bool validTrip = false;
+        // Trust local trip status if available
+        if (localTripStatus == 'pre-departure' ||
+            localTripStatus == 'departed') {
+          validTrip = true;
+        } else if (currentTripId.isNotEmpty) {
+          // Fallback: Check Firebase for trip status ONLY if local status is missing/empty
+          try {
+            final tripDoc = await FirebaseFirestore.instance
+                .collection('trips')
+                .doc(currentTripId)
+                .get();
+            final tripData = tripDoc.data();
+            final statusRaw = tripData != null && tripData['status'] != null
+                ? tripData['status'].toString().trim().toLowerCase()
+                : '';
+            debugPrint(
+                '[SPLASH] Trip $currentTripId status from Firestore: "$statusRaw"');
+            if (statusRaw == 'pre-departure' || statusRaw == 'departed') {
+              validTrip = true;
+            }
+          } catch (e) {
+            debugPrint('[SPLASH] Error checking trip in Firebase: $e');
+            // If Firestore fails, DO NOT clear session; trust local state if tripId exists
+            if (currentTripId.isNotEmpty) {
+              validTrip = true;
+            }
+          }
+        }
+
+        if (savedConductor != null && validTrip) {
+          // Session and valid trip exist — restore conductor to AppState
+          debugPrint(
+              '[SPLASH] Found saved session: ${savedConductor['name']} with valid trip $currentTripId');
           AppState.instance.setConductor(savedConductor);
 
           // Load persisted bookings for this conductor
@@ -73,13 +108,6 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
               ),
             );
-          } else if (lastScreen != null &&
-              lastScreen['name'] == 'next_day_dispatch_screen') {
-            debugPrint('[SPLASH] Restoring to NextDayDispatchScreen');
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const NextDayDispatchScreen()),
-            );
           } else {
             // No last screen saved — go directly to HomeScreen with default route
             debugPrint(
@@ -97,21 +125,24 @@ class _SplashScreenState extends State<SplashScreen> {
             );
           }
         } else {
-          // No session — show LoginScreen
-          debugPrint('[SPLASH] No saved session, navigating to LoginScreen');
+          // No valid trip/session — clear all and show Dispatch Menu
+          debugPrint(
+              '[SPLASH] No valid trip/session, clearing state and showing Dispatch Menu');
+          await LocalStorage.clearSession();
           if (!mounted) return;
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            MaterialPageRoute(builder: (_) => const DispatchScreen()),
           );
         }
       } catch (e) {
         debugPrint('[SPLASH] ERROR in _checkSessionAndNavigate: $e');
         if (mounted) {
-          // On error, show LoginScreen
+          // On error, show Dispatch Menu
+          await LocalStorage.clearSession();
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            MaterialPageRoute(builder: (_) => const DispatchScreen()),
           );
         }
       }

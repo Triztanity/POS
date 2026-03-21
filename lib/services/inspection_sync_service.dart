@@ -1,22 +1,20 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/inspection.dart';
 import '../local_storage.dart';
 
 /// Service to sync inspection data to remote dispatch dashboard
 class InspectionSyncService {
-  static final InspectionSyncService _instance = InspectionSyncService._internal();
+  static final InspectionSyncService _instance =
+      InspectionSyncService._internal();
   late final Connectivity _connectivity;
   late StreamSubscription<ConnectivityResult> _connectivitySubscription;
   bool _isOnline = false;
   bool _isSyncing = false;
 
   // TODO: Configure your backend API endpoint
-  static const String _apiBaseUrl = 'https://your-dispatch-api.com/api';
-  static const String _syncEndpoint = '$_apiBaseUrl/inspections/sync';
   static const Duration _syncRetryDelay = Duration(seconds: 30);
   static const int _maxRetries = 3;
 
@@ -103,38 +101,15 @@ class InspectionSyncService {
   Future<void> _syncInspection(Inspection inspection,
       {int retryCount = 0}) async {
     try {
-      final response = await http
-          .post(
-            Uri.parse(_syncEndpoint),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${_getAuthToken()}',
-            },
-            body: jsonEncode(inspection.toMap()),
-          )
-          .timeout(
-            const Duration(seconds: 15),
-            onTimeout: () =>
-                throw Exception('Sync request timeout for ${inspection.id}'),
-          );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        // Success: mark as synced
-        await _markInspectionSynced(inspection.id);
-        debugPrint(
-            '[INSPECTION_SYNC] Synced inspection ${inspection.id} successfully');
-      } else {
-        // Server error: retry with exponential backoff
-        final errorMsg =
-            'Server returned ${response.statusCode}: ${response.body}';
-        await _handleSyncError(inspection.id, errorMsg);
-
-        if (retryCount < _maxRetries) {
-          await Future.delayed(
-              Duration(seconds: _syncRetryDelay.inSeconds * (retryCount + 1)));
-          await _syncInspection(inspection, retryCount: retryCount + 1);
-        }
-      }
+      // Upload directly to Firestore collection 'Inspections'
+      final map = inspection.toRemoteMap();
+      await FirebaseFirestore.instance
+          .collection('Inspections')
+          .doc(inspection.id)
+          .set(map);
+      await _markInspectionSynced(inspection.id);
+      debugPrint(
+          '[INSPECTION_SYNC] Synced inspection ${inspection.id} to Firestore');
     } catch (e) {
       final errorMsg = 'Sync failed: $e';
       debugPrint('[INSPECTION_SYNC] Error syncing ${inspection.id}: $e');
@@ -153,8 +128,7 @@ class InspectionSyncService {
   Future<void> _markInspectionSynced(String inspectionId) async {
     try {
       final allInspections = LocalStorage.loadInspections();
-      final index =
-          allInspections.indexWhere((m) => m['id'] == inspectionId);
+      final index = allInspections.indexWhere((m) => m['id'] == inspectionId);
       if (index >= 0) {
         allInspections[index]['isSynced'] = true;
         allInspections[index]['syncError'] = null;
@@ -171,8 +145,7 @@ class InspectionSyncService {
   Future<void> _handleSyncError(String inspectionId, String errorMsg) async {
     try {
       final allInspections = LocalStorage.loadInspections();
-      final index =
-          allInspections.indexWhere((m) => m['id'] == inspectionId);
+      final index = allInspections.indexWhere((m) => m['id'] == inspectionId);
       if (index >= 0) {
         allInspections[index]['syncError'] = errorMsg;
         await LocalStorage.updateInspection(

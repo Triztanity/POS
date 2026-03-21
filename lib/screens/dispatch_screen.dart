@@ -8,7 +8,6 @@ import '../services/device_config_service.dart';
 import '../services/nfc_reader_mode_service.dart';
 // pos auth and tripDetails uploads removed — schedule claim flow handles dispatch
 import 'login_screen.dart';
-import 'next_day_dispatch_screen.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../utils/dialogs.dart';
 import '../services/firebase_dispatch_service.dart';
@@ -148,6 +147,7 @@ class _DispatchScreenState extends State<DispatchScreen> {
 
     await LocalStorage.clearCurrentConductor();
     await LocalStorage.clearCurrentDriver();
+    await LocalStorage.clearSession();
     AppState.instance.clearSession();
 
     // Persist route into local session
@@ -434,26 +434,8 @@ class _DispatchScreenState extends State<DispatchScreen> {
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) =>
-                                        const NextDayDispatchScreen()),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                side: BorderSide(color: Colors.grey[300]!),
-                              ),
-                              child: const Text('Next-Day Dispatch',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14)),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
+                          // Next-Day Dispatch removed
+                          const SizedBox(width: 0),
                           Expanded(
                             child: ElevatedButton.icon(
                               icon: const Icon(Icons.check_circle_outline),

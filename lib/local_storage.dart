@@ -13,6 +13,70 @@ import 'services/app_state.dart';
 ///   'synced': true
 /// }
 class LocalStorage {
+  /// Set the current trip status (e.g., 'pre-departure', 'departed', 'arrived') in session box
+  static Future<void> setCurrentTripStatus(String status) async {
+    try {
+      final box = Hive.box<Map>(_sessionBox);
+      final session = box.get('sessionData');
+      final newSession =
+          Map<String, dynamic>.from(session?.cast<String, dynamic>() ?? {});
+      newSession['tripStatus'] = status;
+      await box.put('sessionData', newSession as Map);
+      debugPrint('[LocalStorage] Set current trip status: $status');
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR setting trip status: $e');
+    }
+  }
+
+  /// Get the current trip status from session box
+  static String getCurrentTripStatus() {
+    try {
+      final box = Hive.box<Map>(_sessionBox);
+      final session = box.get('sessionData');
+      if (session != null) {
+        final s = Map<String, dynamic>.from(session.cast<String, dynamic>());
+        return s['tripStatus']?.toString() ?? '';
+      }
+      return '';
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR getting trip status: $e');
+      return '';
+    }
+  }
+
+  /// Clears all session-related data (conductor, driver, lastScreen, etc.)
+  static Future<void> clearSession() async {
+    try {
+      final sessionBox = Hive.box<Map>(_sessionBox);
+      await sessionBox.delete('conductor');
+      await sessionBox.delete('driver');
+      await sessionBox.delete('lastScreen');
+      // Clear any other session keys as needed
+
+      // Also clear all trip, booking, and scanned ticket state
+      if (Hive.isBoxOpen(_tripsBox)) {
+        final tripsBox = Hive.box<List>(_tripsBox);
+        await tripsBox.clear();
+        debugPrint('[LocalStorage] Cleared trips box');
+      }
+      if (Hive.isBoxOpen(_bookingsBox)) {
+        final bookingsBox = Hive.box<List>(_bookingsBox);
+        await bookingsBox.clear();
+        debugPrint('[LocalStorage] Cleared bookings box');
+      }
+      if (Hive.isBoxOpen(_scannedTicketsBox)) {
+        final scannedBox = Hive.box<List>(_scannedTicketsBox);
+        await scannedBox.clear();
+        debugPrint('[LocalStorage] Cleared scanned tickets box');
+      }
+      debugPrint(
+          '[LocalStorage] Cleared all session, trip, booking, and ticket data');
+    } catch (e) {
+      debugPrint(
+          '[LocalStorage] Error clearing session/trip/booking/ticket: $e');
+    }
+  }
+
   static const _boxName = 'employees';
   static const _bookingsBox = 'bookings';
   static const _sessionBox = 'session';

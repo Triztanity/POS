@@ -18,53 +18,70 @@ class InspectorScreen extends StatefulWidget {
   State<InspectorScreen> createState() => _InspectorScreenState();
 }
 
-class _InspectorScreenState extends State<InspectorScreen> {
+class _InspectorScreenState extends State<InspectorScreen>
+    with WidgetsBindingObserver {
+  late BookingManager _bookingManager;
   late TextEditingController _manualCountController;
   late TextEditingController _commentsController;
-  String? _discrepancyResolved;
-  String? _selectedReason;
-  bool _showCustomExplanation = false;
   late TextEditingController _customExplanationController;
-  late List<String> _stops;
-  late List<String> _dropdownStops;
-  String? _currentLocation;
+  late List<String> stops;
+  String? currentLocation;
 
-  int _systemPassengerCount = 0;
   bool _isCleared = false;
 
-  final List<String> _resolutionReasons = [
-    'Passenger failed to scan QR',
-    'Double counting',
-    'Child / exempted passenger',
-    'Conductor input error',
-    'System delay',
-    'Other',
-  ];
+  String _derivedRouteDirection = 'north_to_south';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _bookingManager = BookingManager();
     _manualCountController = TextEditingController();
     _commentsController = TextEditingController();
     _customExplanationController = TextEditingController();
-    // Prepare stops and default current location, then get system passenger count
+
+    // Derive direction from routeName if possible
+    final routeInfo = LocalStorage.getCurrentRoute();
+    if (routeInfo != null && routeInfo['routeName'] != null) {
+      _derivedRouteDirection =
+          _deriveRouteDirectionFromText(routeInfo['routeName']!);
+    } else {
+      _derivedRouteDirection = widget.routeDirection.isNotEmpty
+          ? widget.routeDirection
+          : 'north_to_south';
+    }
+    _initializeStopsAndLocation();
+    _loadBookings();
+  }
+
+  String _deriveRouteDirectionFromText(String raw) {
+    final text = raw.trim().toLowerCase();
+    if (text.isEmpty) return 'north_to_south';
+    if (text.contains('nasugbu') && text.contains('batangas')) {
+      final nasugbuIdx = text.indexOf('nasugbu');
+      final batangasIdx = text.indexOf('batangas');
+      if (nasugbuIdx < batangasIdx) return 'north_to_south';
+      if (batangasIdx < nasugbuIdx) return 'south_to_north';
+    }
+    if (text.contains('north_to_south') || text.contains('north to south')) {
+      return 'north_to_south';
+    }
+    if (text.contains('south_to_north') || text.contains('south to north')) {
+      return 'south_to_north';
+    }
+    return 'north_to_south';
+  }
+
+  void _initializeStopsAndLocation() {
     final forwardStops = FareTable.placeNamesWithKm;
-    // Prefer the persisted route (set at route selection / dispatch) if available,
-    // otherwise use the routeDirection passed into the screen.
-    final currentRoute = LocalStorage.getCurrentRoute();
-    final routeId =
-        currentRoute != null ? currentRoute['routeId'] : widget.routeDirection;
-    _stops = routeId == 'north_to_south'
+    stops = _derivedRouteDirection == 'north_to_south'
         ? List.from(forwardStops)
         : List.from(forwardStops.reversed);
-    // Use uppercase OVERVIEW to match other screens
-    _dropdownStops = ['OVERVIEW', ..._stops];
-    _currentLocation = 'OVERVIEW';
-    _calculateSystemPassengerCount();
+    currentLocation = 'OVERVIEW';
   }
 
   List<Booking> _getCombinedBookings() {
-    var bookings = BookingManager().getBookings().toList();
+    var bookings = _bookingManager.getBookings().toList();
     final walkins =
         LocalStorage.loadWalkinsForTrip(LocalStorage.getCurrentTripId())
             .toList();
@@ -92,65 +109,80 @@ class _InspectorScreenState extends State<InspectorScreen> {
     return FareTable.normalizePlaceName(location);
   }
 
-  void _calculateSystemPassengerCount() {
+  void _loadBookings() {
     try {
-      final bookings = _getCombinedBookings();
-      if (_currentLocation == 'OVERVIEW') {
-        // For inspector, show 0 for overview (match passengers screen on-board behavior)
-        setState(() {
-          _systemPassengerCount = 0;
-        });
-        return;
+      final conductor = AppState.instance.conductor;
+      final uid = conductor?['uid']?.toString();
+      if (uid != null && uid.isNotEmpty) {
+        _bookingManager.loadForConductor(uid);
       }
-
-      final currentIdx = _stops.indexOf(_currentLocation ?? '');
-      if (currentIdx == -1) {
-        setState(() {
-          _systemPassengerCount = 0;
-        });
-        return;
-      }
-
-      int count = 0;
-      for (final booking in bookings) {
-        if (booking.status != 'on-board') continue;
-
-        int fromIdx = -1, toIdx = -1;
-        final originNormalized = _normalizeLocationName(booking.fromLocation);
-        final destNormalized = _normalizeLocationName(booking.toLocation);
-        final originWords = originNormalized
-            .split(RegExp(r'\s+'))
-            .where((w) => w.isNotEmpty)
-            .toList();
-        final destWords = destNormalized
-            .split(RegExp(r'\s+'))
-            .where((w) => w.isNotEmpty)
-            .toList();
-
-        for (int i = 0; i < _stops.length; i++) {
-          final stopNormalized = _normalizeLocationName(_stops[i]);
-          final stopWords = stopNormalized
-              .split(RegExp(r'\s+'))
-              .where((w) => w.isNotEmpty)
-              .toList();
-          if (stopWords.every((sw) => originWords.contains(sw))) fromIdx = i;
-          if (stopWords.every((sw) => destWords.contains(sw))) toIdx = i;
-        }
-
-        if (fromIdx != -1 &&
-            toIdx != -1 &&
-            fromIdx <= currentIdx &&
-            currentIdx < toIdx) {
-          count += booking.passengers;
-        }
-      }
-
-      setState(() {
-        _systemPassengerCount = count;
-      });
-    } catch (e) {
-      debugPrint('[INSPECTOR] Error calculating system passenger count: $e');
+    } catch (_) {
+      // continue with in-memory bookings if load fails
     }
+  }
+
+  int _getPassengersOnBoard() {
+    final bookings = _getCombinedBookings();
+    if (currentLocation == 'OVERVIEW') return 0;
+    final currentIdx = stops.indexOf(currentLocation ?? '');
+    if (currentIdx == -1) return 0;
+    int count = 0;
+    for (final booking in bookings) {
+      if (booking.status != 'on-board') continue;
+      int fromIdx = -1, toIdx = -1;
+      final originNormalized = _normalizeLocationName(booking.fromLocation);
+      final destNormalized = _normalizeLocationName(booking.toLocation);
+      final originWords = originNormalized
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+      final destWords = destNormalized
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+      for (int i = 0; i < stops.length; i++) {
+        final stopNormalized = _normalizeLocationName(stops[i]);
+        final stopWords = stopNormalized
+            .split(RegExp(r'\s+'))
+            .where((w) => w.isNotEmpty)
+            .toList();
+        if (stopWords.every((sw) => originWords.contains(sw))) fromIdx = i;
+        if (stopWords.every((sw) => destWords.contains(sw))) toIdx = i;
+      }
+      if (fromIdx != -1 &&
+          toIdx != -1 &&
+          fromIdx <= currentIdx &&
+          currentIdx < toIdx) {
+        count += booking.passengers;
+      }
+    }
+    return count;
+  }
+
+  // No persistent system count state here; compute on-demand via _getPassengersOnBoard()
+
+  // Canonical dropdown logic from PassengersScreen
+  List<DropdownMenuItem<String>> _buildLocationDropdownItems() {
+    // Custom logic: Always show all stops in the correct order for the route
+    final items = <DropdownMenuItem<String>>[];
+    items.add(
+      const DropdownMenuItem(
+        value: 'OVERVIEW',
+        child: Text('OVERVIEW',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+      ),
+    );
+    // For Nasugbu to Batangas, show Nasugbu first, Batangas last
+    // For Batangas to Nasugbu, show Batangas first, Nasugbu last
+    for (final stop in stops) {
+      items.add(
+        DropdownMenuItem(
+          value: stop,
+          child: Text(stop, style: const TextStyle(fontSize: 13)),
+        ),
+      );
+    }
+    return items;
   }
 
   void _compareAndValidate() {
@@ -162,14 +194,10 @@ class _InspectorScreenState extends State<InspectorScreen> {
     }
 
     final manualCount = int.tryParse(manualInput) ?? 0;
-    final matches = manualCount == _systemPassengerCount;
+    final matches = manualCount == _getPassengersOnBoard();
 
     setState(() {
       _isCleared = matches;
-      if (matches) {
-        _discrepancyResolved = null;
-        _selectedReason = null;
-      }
     });
 
     if (matches) {
@@ -187,25 +215,7 @@ class _InspectorScreenState extends State<InspectorScreen> {
 
     final manualCount = int.tryParse(manualInput) ?? 0;
 
-    // Validate mismatch case
-    if (!_isCleared && _discrepancyResolved == null) {
-      await _showMessageDialog(
-          'Validation', 'Please select whether the discrepancy was resolved');
-      return;
-    }
-
-    if (_discrepancyResolved == 'Resolved' && _selectedReason == null) {
-      await _showMessageDialog(
-          'Validation', 'Please select a resolution reason');
-      return;
-    }
-
-    if (_selectedReason == 'Other' &&
-        _customExplanationController.text.trim().isEmpty) {
-      await _showMessageDialog(
-          'Validation', 'Please provide a custom explanation');
-      return;
-    }
+    // No extra decision required for discrepancy; isCleared determines report.
 
     // Collect NFC confirmations: inspector and conductor must both tap
     final signatures = await _collectSignatures();
@@ -234,13 +244,8 @@ class _InspectorScreenState extends State<InspectorScreen> {
           'UNKNOWN',
       driverUid: AppState.instance.driver?['uid']?.toString() ?? 'UNKNOWN',
       manualPassengerCount: manualCount,
-      systemPassengerCount: _systemPassengerCount,
+      systemPassengerCount: _getPassengersOnBoard(),
       isCleared: _isCleared,
-      discrepancyResolved: _discrepancyResolved,
-      resolutionReason: _selectedReason == 'Other' ? null : _selectedReason,
-      customExplanation: _selectedReason == 'Other'
-          ? _customExplanationController.text.trim()
-          : null,
       comments: _commentsController.text.trim().isNotEmpty
           ? _commentsController.text.trim()
           : null,
@@ -383,6 +388,7 @@ class _InspectorScreenState extends State<InspectorScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _manualCountController.dispose();
     _commentsController.dispose();
     _customExplanationController.dispose();
@@ -390,10 +396,35 @@ class _InspectorScreenState extends State<InspectorScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refresh bookings when screen is resumed
+      setState(() {
+        _loadBookings();
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
     final screenH = mq.size.height;
     final screenW = mq.size.width;
+
+    // Keep in sync with Passenger menu by reloading bookings and counts
+    _loadBookings();
+    // Debug: log current route, widget prop, stops and currentLocation each build
+    try {
+      final cur = LocalStorage.getCurrentRoute();
+      debugPrint('[INSPECTOR] build LocalStorage.getCurrentRoute: $cur');
+    } catch (_) {}
+    debugPrint(
+        '[INSPECTOR] build widget.routeDirection=${widget.routeDirection}');
+    if (stops.isNotEmpty) {
+      debugPrint(
+          '[INSPECTOR] build stops[0]=${stops.first}, stops[last]=${stops.last}');
+    }
+    debugPrint('[INSPECTOR] build currentLocation=$currentLocation');
 
     // Compute safe bottom padding so content doesn't overflow under nav bars
     // Add a small extra slack (12px) to ensure no fractional-pixel overflow
@@ -436,18 +467,15 @@ class _InspectorScreenState extends State<InspectorScreen> {
                         SizedBox(
                           height: 36,
                           child: DropdownButton<String>(
-                            value: _currentLocation,
+                            value: currentLocation,
                             isExpanded: true,
                             underline:
                                 Container(color: Colors.grey[300], height: 1),
-                            items: _dropdownStops
-                                .map((s) =>
-                                    DropdownMenuItem(value: s, child: Text(s)))
-                                .toList(),
+                            items: _buildLocationDropdownItems(),
                             onChanged: (value) {
                               setState(() {
-                                _currentLocation = value;
-                                _calculateSystemPassengerCount();
+                                // Only update currentLocation, never clear stops
+                                currentLocation = value;
                               });
                             },
                           ),
@@ -482,7 +510,7 @@ class _InspectorScreenState extends State<InspectorScreen> {
                           ),
                           SizedBox(height: screenH * 0.01),
                           Text(
-                            '$_systemPassengerCount',
+                            '${_getPassengersOnBoard()}',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 28,
@@ -590,98 +618,8 @@ class _InspectorScreenState extends State<InspectorScreen> {
                       ),
                       SizedBox(height: screenH * 0.015),
                       Text(
-                          'Manual: ${_manualCountController.text} vs System: $_systemPassengerCount'),
+                          'Manual: ${_manualCountController.text} vs System: ${_getPassengersOnBoard()}'),
                       SizedBox(height: screenH * 0.02),
-
-                      // Discrepancy resolution
-                      const Text('Was the discrepancy resolved?',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      SizedBox(height: screenH * 0.01),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: RadioListTile<String>(
-                              value: 'Resolved',
-                              groupValue: _discrepancyResolved,
-                              onChanged: (v) => setState(() {
-                                _discrepancyResolved = v;
-                                _showCustomExplanation = false;
-                                _selectedReason = null;
-                              }),
-                              title: const Text('Resolved'),
-                              controlAffinity: ListTileControlAffinity.leading,
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                          ),
-                          Expanded(
-                            child: RadioListTile<String>(
-                              value: 'Not Resolved',
-                              groupValue: _discrepancyResolved,
-                              onChanged: (v) => setState(() {
-                                _discrepancyResolved = v;
-                                _showCustomExplanation = false;
-                                _selectedReason = null;
-                              }),
-                              title: const Text('Not Resolved'),
-                              controlAffinity: ListTileControlAffinity.leading,
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: screenH * 0.02),
-
-                      // Resolution reason dropdown (if resolved)
-                      if (_discrepancyResolved == 'Resolved')
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Resolution Reason',
-                                style: TextStyle(fontWeight: FontWeight.bold)),
-                            SizedBox(height: screenH * 0.01),
-                            DropdownButtonFormField<String>(
-                              initialValue: _selectedReason,
-                              hint: const Text('Select reason'),
-                              isExpanded: true,
-                              items: _resolutionReasons
-                                  .map((r) => DropdownMenuItem(
-                                      value: r, child: Text(r)))
-                                  .toList(),
-                              onChanged: (v) => setState(() {
-                                _selectedReason = v;
-                                _showCustomExplanation = v == 'Other';
-                              }),
-                              decoration: InputDecoration(
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                              ),
-                            ),
-                            SizedBox(height: screenH * 0.015),
-
-                            // Custom explanation (if Other)
-                            if (_showCustomExplanation)
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Custom Explanation',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13)),
-                                  SizedBox(height: screenH * 0.01),
-                                  TextField(
-                                    controller: _customExplanationController,
-                                    maxLines: 3,
-                                    decoration: InputDecoration(
-                                      hintText: 'Explain the custom reason',
-                                      border: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8)),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                          ],
-                        ),
                     ],
                   ),
                 ),

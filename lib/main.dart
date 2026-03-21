@@ -114,9 +114,13 @@ class _AfcsAppState extends State<AfcsApp> {
       navigatorKey: navigatorKey,
       home: const SplashScreen(),
       routes: {
-        '/inspector': (ctx) => InspectorScreen(
-              routeDirection: 'north_to_south', // TODO: Get from app state
-            ),
+        '/inspector': (ctx) {
+          final currentRoute = LocalStorage.getCurrentRoute();
+          final routeDirection = currentRoute != null
+              ? (currentRoute['routeId']?.toString() ?? 'north_to_south')
+              : 'north_to_south';
+          return InspectorScreen(routeDirection: routeDirection);
+        },
       },
     );
   }

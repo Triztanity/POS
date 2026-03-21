@@ -228,8 +228,7 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
                           } catch (_) {}
 
                           // Clear current conductor/driver session
-                          await LocalStorage.clearCurrentConductor();
-                          await LocalStorage.clearCurrentDriver();
+                          await LocalStorage.clearSession();
                           AppState.instance.clearSession();
 
                           if (!mounted) return;
