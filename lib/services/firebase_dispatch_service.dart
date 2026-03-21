@@ -128,7 +128,7 @@ class FirebaseDispatchService {
   Future<String?> claimAndDispatchSchedule({
     required String busNumber,
     required Map<String, String> route,
-    required String dispatcherUid,
+    required String driverUid,
   }) async {
     // Ensure device is authenticated to Firestore
     final posAuth = POSDeviceAuthService();
@@ -170,7 +170,7 @@ class FirebaseDispatchService {
           'dispatchTime': FieldValue.serverTimestamp(),
           'routeId': route['routeId'],
           'routeName': route['routeName'],
-          'routeAssignedBy': dispatcherUid,
+          'routeAssignedBy': driverUid,
           'routeAssignedAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });

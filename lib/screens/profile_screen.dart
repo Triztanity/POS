@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'login_screen.dart';
 import '../local_storage.dart';
 import '../models/booking.dart';
-import '../services/nfc_auth_service.dart';
+
 import '../services/nfc_reader_mode_service.dart';
 import '../services/app_state.dart';
 // records_screen import removed (manual mode removed)
@@ -20,9 +20,9 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final NFCAuthService _nfc = NFCAuthService();
+
   Map<String, dynamic>? _driver; // populated after driver taps their card
-  bool _scanningDriver = false;
+
   String _driverStatus = '';
   StreamSubscription<Map<String, dynamic>>? _nfcSub;
 
@@ -88,6 +88,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (_driver != null) _roleCardFromEmp(screenW, _driver!),
               if (_driver == null) _driverTapCard(screenW),
 
+              SizedBox(height: screenH * 0.04),
+
               // Logout Button
               SizedBox(
                 width: double.infinity,
@@ -101,6 +103,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           'No conductor is currently logged in');
                       return;
                     }
+
+                    // Reset NFC debounce to prevent ignored taps
+                    NFCReaderModeService.instance.resetDebounce();
 
                     // Show a modal that immediately starts polling the reader
                     final bool? confirmed = await showDialog<bool>(
@@ -190,8 +195,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       BookingManager().clearBookings();
                     } catch (_) {}
 
-                    // Clear session from both AppState and persistent storage
-                    AppState.instance.clearSession();
+                    // Clear ONLY conductor session to keep driver locked to schedule
+                    AppState.instance.setConductor(null);
                     await LocalStorage.clearCurrentConductor();
                     await LocalStorage
                         .clearLastScreen(); // Clear navigation state on logout
@@ -235,8 +240,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    // Restore driver from AppState if already set
-    _driver = AppState.instance.driver;
+    // Restore driver from AppState or LocalStorage if already set
+    _driver = AppState.instance.driver ?? LocalStorage.loadCurrentDriver();
+    if (_driver != null && AppState.instance.driver == null) {
+      AppState.instance.setDriver(_driver);
+    }
     debugPrint(
         '[PROFILE] initState: driver from AppState = ${_driver?['name']} uid=${_driver?['uid']}');
 
@@ -261,8 +269,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return;
       }
 
-      // Normal driver detection
       if (role == 'driver') {
+        // Clear status since a driver tapped
+        setState(() {
+          _driverStatus = '';
+        });
         // Check if this is a different driver than currently registered
         final currentDriverUid = _driver?['uid']?.toString();
         final newDriverUid = user['uid']?.toString();
@@ -281,6 +292,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _driverStatus = '';
           });
           AppState.instance.setDriver(user);
+          LocalStorage.saveCurrentDriver(user);
 
           if (mounted) {
             await Dialogs.showMessage(context, 'Driver Detected',
@@ -290,7 +302,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           debugPrint('[PROFILE] Same driver tapped again, ignoring');
         }
       } else {
-        debugPrint('[PROFILE] Non-driver role received: $role');
+        if (_driver == null) {
+          setState(() {
+            _driverStatus = 'Card belongs to $role — only drivers are shown here.';
+          });
+        }
       }
     });
   }
@@ -371,6 +387,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
 
     AppState.instance.setDriver(_driver);
+    if (_driver != null) {
+      LocalStorage.saveCurrentDriver(_driver!);
+    }
 
     await Dialogs.showMessage(
         context, 'Driver Changed', 'Driver changed to ${_driver!['name']}');
@@ -409,7 +428,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -447,15 +466,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         : _maskUid(uid.toString());
 
     return Card(
-      elevation: 0,
+      elevation: 1,
+      color: Colors.green.shade50,
+      margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Padding(
-        padding: EdgeInsets.all(screenW * 0.03),
+        padding: EdgeInsets.symmetric(horizontal: screenW * 0.04, vertical: 8),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Role label removed; position shown below
-            _infoRow('NAME', name),
+            _infoRow('Name', name, isValueSmall: true),
             _infoRow('Employee ID', masked, isValueSmall: true),
             _infoRow('Position', role[0].toUpperCase() + role.substring(1),
                 isValueSmall: true),
@@ -472,15 +492,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final masked = uid.toString().isEmpty ? '****' : _maskUid(uid.toString());
 
     return Card(
-      elevation: 0,
+      elevation: 1,
+      color: Colors.blue.shade50,
+      margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Padding(
-        padding: EdgeInsets.all(screenW * 0.03),
+        padding: EdgeInsets.symmetric(horizontal: screenW * 0.04, vertical: 8),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Role label removed; position shown below
-            _infoRow('NAME', name),
+            _infoRow('Name', name, isValueSmall: true),
             _infoRow('Employee ID', masked, isValueSmall: true),
             _infoRow('Position', role[0].toUpperCase() + role.substring(1),
                 isValueSmall: true),
@@ -492,36 +513,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _driverTapCard(double screenW) {
     return Card(
-      elevation: 0,
+      elevation: 1,
+      color: Colors.blue.shade50,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: InkWell(
-        onTap: _scanningDriver ? null : _scanDriver,
-        child: Padding(
-          padding: EdgeInsets.all(screenW * 0.04),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Text(
-                'Driver',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
+      child: Padding(
+        padding: EdgeInsets.all(screenW * 0.04),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Text(
+              'Driver',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Please tap your Driver ID card to register.',
+              style: TextStyle(fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+            if (_driverStatus.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(
-                _scanningDriver
-                    ? 'Scanning for driver card…'
-                    : 'Tap driver card to show details',
-                style: const TextStyle(fontSize: 16),
-                textAlign: TextAlign.center,
-              ),
-              if (_driverStatus.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(_driverStatus,
-                    style: const TextStyle(color: Colors.red),
-                    textAlign: TextAlign.center),
-              ],
+              Text(_driverStatus,
+                  style: const TextStyle(color: Colors.red),
+                  textAlign: TextAlign.center),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -542,47 +559,4 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return out;
   }
 
-  Future<void> _scanDriver() async {
-    setState(() {
-      _scanningDriver = true;
-      _driverStatus = '';
-    });
-
-    final uid = await _nfc.pollUid();
-
-    if (!mounted) return;
-
-    if (uid == null) {
-      setState(() {
-        _driverStatus = 'No NFC tag detected. Re-tap.';
-        _scanningDriver = false;
-      });
-      return;
-    }
-
-    final user = LocalStorage.getEmployee(uid);
-    if (user == null) {
-      setState(() {
-        _driverStatus = 'Card not recognized. Contact admin.';
-        _scanningDriver = false;
-      });
-      return;
-    }
-
-    final role = (user['role'] ?? '').toString().toLowerCase();
-    if (role != 'driver') {
-      setState(() {
-        _driverStatus = 'Card belongs to $role — only drivers are shown here.';
-        _scanningDriver = false;
-      });
-      return;
-    }
-
-    // Valid driver found — show their card
-    setState(() {
-      _driver = user;
-      _scanningDriver = false;
-      _driverStatus = '';
-    });
-  }
 }

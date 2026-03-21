@@ -1,12 +1,14 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../local_storage.dart';
 import '../services/nfc_reader_mode_service.dart';
 import '../services/app_state.dart';
+import '../services/device_config_service.dart';
 import '../models/booking.dart';
 import 'home_screen.dart';
 import '../utils/dialogs.dart';
-// route_selection_screen removed from post-login flow
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,216 +18,229 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _nameController = TextEditingController();
-  String _status = 'Tap your ID card at the back of the POS';
   StreamSubscription? _nfcSub;
+  StreamSubscription<QuerySnapshot>? _scheduleSub;
+
+  Map<String, dynamic>? _schedule;
+  bool _loadingSchedule = true;
+  String _assignedBus = '';
+
+  // Scanned crew (null = not scanned yet)
+  Map<String, dynamic>? _conductor;
+  Map<String, dynamic>? _driver;
+
+  String _status = 'Waiting for schedule...';
 
   @override
   void initState() {
     super.initState();
-    // Ensure debounce cleared and subscribe immediately so the login screen
-    // can accept a tap right after navigation from logout.
-    try {
-      NFCReaderModeService.instance.resetDebounce();
-    } catch (_) {}
-
-    _nfcSub = NFCReaderModeService.instance.onTag.listen((user) {
-      debugPrint('[LOGIN] NFC tag event received: $user');
-      final role = (user['role'] ?? '').toString().toLowerCase();
-
-      // Skip inspector card on login screen (handled globally)
-      if (role == 'inspector') {
-        debugPrint('[LOGIN] inspector card detected, ignoring on login screen');
-        return;
-      }
-
-      if (role == 'conductor') {
-        debugPrint('[LOGIN] conductor detected, calling _handleConductorLogin');
-        if (!mounted) {
-          debugPrint('[LOGIN] widget not mounted, returning');
-          return;
-        }
-        _handleConductorLogin(user);
-      } else {
-        final name = user['name'] ?? 'User';
-        final roleDisplay = ((user['role'] ?? '').toString());
-        if (roleDisplay.isNotEmpty) {
-          final display =
-              roleDisplay[0].toUpperCase() + roleDisplay.substring(1);
-          setState(() {
-            _status =
-                'Tap accepted for $display $name. Only CONDUCTOR can login on this device.';
-          });
-        }
-      }
-    });
-
-    // Initialize local storage
-    LocalStorage.init().then((_) {
-      // status hint
-      Future.delayed(const Duration(milliseconds: 400), () {
-        if (mounted) {
-          setState(() {
-            _status = 'Tap your ID card at the back of the POS';
-          });
-        }
-      });
-    });
+    AppState.instance.setCurrentScreen('login_screen');
+    _initScheduleListener();
+    _initNfc();
   }
 
   @override
   void dispose() {
     _nfcSub?.cancel();
-    _nameController.dispose();
+    _scheduleSub?.cancel();
     super.dispose();
   }
 
-  void _handleConductorLogin(Map<String, dynamic> user) {
-    debugPrint('[LOGIN] _handleConductorLogin called with user: $user');
-    final name = user['name'] ?? 'User';
-    debugPrint('[LOGIN] name=$name, mounted=$mounted');
+  // ─── Schedule Listener ───────────────────────────────────────────────
 
-    // Store conductor in AppState so it persists across navigation
-    AppState.instance.setConductor(user);
-    AppState.instance.setDriver(null); // Clear any previous driver on new login
+  Future<void> _initScheduleListener() async {
+    var bus = await DeviceConfigService.getAssignedBus();
+    bus ??= await DeviceConfigService.autoDetectAndSaveAssignedBus();
+    if (bus == null) {
+      if (mounted) {
+        setState(() {
+          _loadingSchedule = false;
+          _status = 'Device not registered to any bus.';
+        });
+      }
+      return;
+    }
+    _assignedBus = bus;
 
-    // Persist session to storage for app restart recovery
-    LocalStorage.saveCurrentConductor(user);
+    _scheduleSub = FirebaseFirestore.instance
+        .collection('schedules')
+        .where('busNumber', isEqualTo: bus)
+        .where('status', whereIn: ['pre-departure', 'departed'])
+        .limit(1)
+        .snapshots()
+        .listen((snapshot) {
+      if (!mounted) return;
+      if (snapshot.docs.isNotEmpty) {
+        final data = snapshot.docs.first.data();
+        setState(() {
+          _schedule = data;
+          _loadingSchedule = false;
+          _updateStatus();
+        });
+      } else {
+        setState(() {
+          _schedule = null;
+          _loadingSchedule = false;
+          _status = 'No active schedule for $_assignedBus';
+        });
+      }
+    }, onError: (e) {
+      debugPrint('[LOGIN] Schedule listener error: $e');
+      if (mounted) setState(() => _loadingSchedule = false);
+    });
+  }
 
-    // Load persisted bookings for this conductor (if any)
+  // ─── NFC Listener ────────────────────────────────────────────────────
+
+  void _initNfc() {
     try {
-      final uid = user['uid']?.toString();
+      NFCReaderModeService.instance.resetDebounce();
+    } catch (_) {}
+
+    _nfcSub = NFCReaderModeService.instance.onTag.listen((user) {
+      debugPrint('[LOGIN] NFC tag: $user');
+      final role = (user['role'] ?? '').toString().toLowerCase();
+
+      if (role == 'inspector') {
+        debugPrint('[LOGIN] inspector card, ignoring');
+        return;
+      }
+
+      if (!mounted) return;
+
+      if (role != 'conductor' && role != 'driver') {
+        return;
+      }
+
+      if (!_isScheduleReady()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Schedule Not Ready.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ));
+        }
+        return;
+      }
+
+      if (role == 'conductor') {
+        setState(() {
+          _conductor = user;
+        });
+        AppState.instance.setConductor(user);
+        LocalStorage.saveCurrentConductor(user);
+      } else if (role == 'driver') {
+        setState(() {
+          _driver = user;
+        });
+        AppState.instance.setDriver(user);
+        LocalStorage.saveCurrentDriver(user);
+      }
+
+      // Check if both are scanned and schedule is ready
+      _tryNavigate();
+    });
+  }
+
+  // ─── Navigation Logic ────────────────────────────────────────────────
+
+  void _updateStatus() {
+    final scheduleReady = _isScheduleReady();
+    final hasConductor = _conductor != null;
+    final hasDriver = _driver != null;
+
+    if (_schedule == null) {
+      _status = 'No active schedule for $_assignedBus';
+    } else if (!scheduleReady) {
+      _status = 'Schedule Not Ready.';
+    } else if (!hasConductor && !hasDriver) {
+      _status = 'Schedule READY — Scan Conductor & Driver ID cards to begin.';
+    } else if (!hasConductor) {
+      _status = 'Driver scanned ✓ — Now scan Conductor ID card.';
+    } else if (!hasDriver) {
+      _status = 'Conductor scanned ✓ — Now scan Driver ID card.';
+    } else {
+      _status = 'Both scanned ✓ — Logging in...';
+    }
+  }
+
+  bool _isScheduleReady() {
+    if (_schedule == null) return false;
+    final status = (_schedule!['status'] ?? '').toString().toLowerCase();
+    return status == 'departed';
+  }
+
+  void _tryNavigate() {
+    if (_conductor == null || _driver == null) return;
+
+    if (!_isScheduleReady()) {
+      // Both scanned but schedule not ready
+      return;
+    }
+
+    // Save trip info from the schedule
+    _saveTripFromSchedule();
+
+    // Load bookings
+    try {
+      final uid = _conductor!['uid']?.toString();
       if (uid != null && uid.isNotEmpty) {
         BookingManager().loadForConductor(uid);
       }
     } catch (_) {}
 
-    if (!mounted) {
-      debugPrint('[LOGIN] widget not mounted, returning');
-      return;
-    }
-
-    // Sequence: conductor tap → driver tap → home screen
-    Future<void> promptDriverTap() async {
-      setState(() {
-        _status = 'Conductor logged in. Driver, please tap your ID.';
-      });
-      await for (final driver in NFCReaderModeService.instance.onTag) {
-        final role = (driver['role'] ?? '').toString().toLowerCase();
-        if (role == 'driver') {
-          AppState.instance.setDriver(driver);
-          LocalStorage.saveCurrentDriver(driver);
-          debugPrint('[LOGIN] Driver detected, proceeding to HomeScreen');
-          break;
-        }
-      }
-    }
-
-    Future<void> proceedLoginFlow() async {
-      await promptDriverTap();
-
-      debugPrint('[LOGIN] navigating to HomeScreen (no route chooser)');
-      final curRoute = LocalStorage.getCurrentRoute();
-      String routeDirection = _routeDirectionFromRoute(curRoute);
-      LocalStorage.saveLastScreen(
-          'home_screen', {'routeDirection': routeDirection});
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-            builder: (_) =>
-                HomeScreen(routeDirection: routeDirection, conductor: user)),
-      );
-      debugPrint('[LOGIN] Navigator.pushReplacement to HomeScreen succeeded');
-      if (mounted) {
-        try {
-          Dialogs.showMessage(context, 'Welcome', 'Welcome, $name!');
-          debugPrint('[LOGIN] dialog shown');
-        } catch (e) {
-          debugPrint('[LOGIN] error showing dialog: $e');
-        }
-      }
-    }
-
-    proceedLoginFlow();
-  }
-
-  Future<void> _loginManual() async {
-    final input = _nameController.text.trim();
-    if (input.isEmpty) {
-      await Dialogs.showMessage(
-          context, 'Login', 'Please enter employee name or ID');
-      return;
-    }
-
-    // Validate against LocalStorage: allow login only if matches an employee record
-    final employees = LocalStorage.getAllEmployees();
-    Map<String, dynamic>? match;
-    final inputLower = input.toLowerCase();
-    final inputUidNorm =
-        input.replaceAll(RegExp(r'[^A-Fa-f0-9]'), '').toUpperCase();
-
-    for (final e in employees) {
-      final name = (e['name'] ?? '').toString();
-      final uid = (e['uid'] ?? '').toString();
-      final uidNorm = uid.replaceAll(RegExp(r'[^A-Fa-f0-9]'), '').toUpperCase();
-      if (name.toLowerCase() == inputLower ||
-          (uidNorm.isNotEmpty && uidNorm == inputUidNorm)) {
-        match = Map<String, dynamic>.from(e);
-        break;
-      }
-    }
-
-    if (match == null) {
-      await Dialogs.showMessage(
-          context, 'Login failed', 'Not recognized — manual login failed');
-      return;
-    }
-
-    // Only allow conductors to login on this device
-    final role = (match['role'] ?? '').toString().toLowerCase();
-    if (role != 'conductor') {
-      await Dialogs.showMessage(context, 'Login not allowed',
-          'Tap accepted for ${match['role']} ${match['name']}. Only CONDUCTOR can login on this device.');
-      return;
-    }
-
-    // Successful manual login
-    AppState.instance.setConductor(match);
-    AppState.instance.setDriver(null);
-
-    // Persist session to storage for app restart recovery
-    LocalStorage.saveCurrentConductor(match);
-
-    try {
-      final uid = match['uid']?.toString();
-      if (uid != null && uid.isNotEmpty) BookingManager().loadForConductor(uid);
-    } catch (_) {}
-
-    // Save default route and navigate directly to HomeScreen
     final curRoute = LocalStorage.getCurrentRoute();
     String routeDirection = _routeDirectionFromRoute(curRoute);
-    LocalStorage.saveLastScreen(
-        'home_screen', {'routeDirection': routeDirection});
+
+    // Use schedule route if available
+    if (_schedule != null) {
+      final routeId = (_schedule!['routeId'] ?? '').toString();
+      if (routeId == 'south_to_north' || routeId == 'north_to_south') {
+        routeDirection = routeId;
+      } else {
+        final routeName = (_schedule!['routeName'] ?? '').toString().toLowerCase();
+        if (routeName.startsWith('batangas')) routeDirection = 'south_to_north';
+        if (routeName.startsWith('nasugbu')) routeDirection = 'north_to_south';
+      }
+    }
+
+    LocalStorage.saveLastScreen('home_screen', {'routeDirection': routeDirection});
+
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-          builder: (_) =>
-              HomeScreen(routeDirection: routeDirection, conductor: match)),
+        builder: (_) => HomeScreen(
+          routeDirection: routeDirection,
+          conductor: _conductor!,
+        ),
+      ),
     );
-    if (mounted) {
-      await Dialogs.showMessage(
-          context, 'Welcome', 'Welcome, ${match['name']}!');
-    }
   }
 
-  /// Determine route direction from stored route data by parsing routeName
+  Future<void> _saveTripFromSchedule() async {
+    if (_schedule == null) return;
+    final tripId = (_schedule!['tripId'] ?? '').toString();
+    if (tripId.isNotEmpty) {
+      await LocalStorage.setCurrentTripId(tripId);
+    }
+    if (_assignedBus.isNotEmpty) {
+      await LocalStorage.setCurrentVehicleNo(_assignedBus);
+    }
+    // Save route
+    try {
+      final routeId = (_schedule!['routeId'] ?? '').toString();
+      final routeName = (_schedule!['routeName'] ?? '').toString();
+      if (routeId.isNotEmpty || routeName.isNotEmpty) {
+        await LocalStorage.setCurrentRoute(routeId, routeName);
+      }
+    } catch (_) {}
+  }
+
   String _routeDirectionFromRoute(Map<String, String>? curRoute) {
     if (curRoute != null) {
-      // First try routeId
       final rid = curRoute['routeId'] ?? '';
       if (rid == 'south_to_north') return 'south_to_north';
       if (rid == 'north_to_south') return 'north_to_south';
-      // Fallback: parse routeName (e.g. "Batangas to Nasugbu")
       final rname = (curRoute['routeName'] ?? '').toLowerCase();
       if (rname.startsWith('batangas')) return 'south_to_north';
       if (rname.startsWith('nasugbu')) return 'north_to_south';
@@ -233,73 +248,243 @@ class _LoginScreenState extends State<LoginScreen> {
     return 'north_to_south';
   }
 
+  // ─── Build UI ────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
-    final screenH = mq.size.height;
     final screenW = mq.size.width;
+    final screenH = mq.size.height;
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: screenW * 0.07),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: screenW * 0.45,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.green[700],
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.directions_bus,
-                  size: 48,
-                  color: Colors.white,
-                ),
-              ),
-
-              SizedBox(height: screenH * 0.05),
-
-              // NFC status
-              Text(
-                _status,
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-
-              const SizedBox(height: 20),
-
-              // Manual fallback
-              TextField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Manual: Employee name or ID',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ElevatedButton(
-                    onPressed: _loginManual,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green[700],
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 12),
-                    ),
-                    child: const Text("Login"),
+      backgroundColor: Colors.grey[100],
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: screenW * 0.06, vertical: 16),
+            child: Column(
+              children: [
+                // ── Header ──
+                Container(
+                  width: screenW * 0.35,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green[700],
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ],
+                  child: const Icon(Icons.directions_bus, size: 40, color: Colors.white),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'AFCS POS',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.green[800],
+                  ),
+                ),
+                if (_assignedBus.isNotEmpty)
+                  Text(
+                    _assignedBus,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+
+                SizedBox(height: screenH * 0.02),
+
+                // ── Schedule Card ──
+                _buildScheduleCard(),
+
+                const SizedBox(height: 12),
+
+                // ── Crew Cards Row ──
+                Row(
+                  children: [
+                    Expanded(child: _buildCrewCard('CONDUCTOR', _conductor, Colors.green)),
+                    const SizedBox(width: 10),
+                    Expanded(child: _buildCrewCard('DRIVER', _driver, Colors.blue)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScheduleCard() {
+    if (_loadingSchedule) {
+      return Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        child: const Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    if (_schedule == null) {
+      return Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Icon(Icons.event_busy, size: 36, color: Colors.grey[400]),
+              const SizedBox(height: 8),
+              Text(
+                'No Active Schedule',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Waiting for dispatcher to create a schedule for $_assignedBus',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
               ),
             ],
           ),
+        ),
+      );
+    }
+
+    final status = (_schedule!['status'] ?? '').toString().toLowerCase();
+    final isReady = status == 'departed';
+    final routeName = (_schedule!['routeName'] ?? '').toString();
+    final rawTime = _schedule!['scheduledTime'];
+
+    String formattedTime = '';
+    if (rawTime is Timestamp) {
+      formattedTime = DateFormat('h:mm a').format(rawTime.toDate());
+    } else if (rawTime is String && rawTime.isNotEmpty) {
+      final parsed = DateTime.tryParse(rawTime);
+      formattedTime = parsed != null ? DateFormat('h:mm a').format(parsed) : rawTime;
+    } else if (rawTime != null) {
+      formattedTime = rawTime.toString();
+    }
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title row with status badge
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'ACTIVE SCHEDULE',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isReady ? Colors.green[600] : Colors.orange[700],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    isReady ? 'READY' : 'NOT READY',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Details
+            if (routeName.isNotEmpty) _scheduleRow('Trip', routeName),
+            if (formattedTime.isNotEmpty) _scheduleRow('Time', formattedTime),
+            _scheduleRow('Bus', _assignedBus),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _scheduleRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+          Flexible(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              textAlign: TextAlign.end,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCrewCard(
+      String title, Map<String, dynamic>? crew, MaterialColor accent) {
+    final scanned = crew != null;
+    final name = crew?['name'] ?? '—';
+    final letter = crew?['letter'] ?? '';
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      color: scanned ? accent[50] : Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        child: Column(
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: accent[800],
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Icon(
+              scanned ? Icons.check_circle : Icons.person_outline,
+              size: 28,
+              color: scanned ? accent[700] : Colors.grey[400],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              scanned ? name : '—',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: scanned ? accent[900] : Colors.grey[500],
+              ),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (letter.isNotEmpty)
+              Text(
+                letter,
+                style: TextStyle(fontSize: 10, color: accent[600]),
+              ),
+          ],
         ),
       ),
     );

@@ -89,5 +89,13 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow update, delete: if false;
     }
+
+    // ============================================================
+    // INSPECTIONS
+    // ============================================================
+    match /inspections/{inspectionId} {
+      allow create, update: if isPosDevice();
+      allow read: if request.auth != null;
+    }
   }
 }

@@ -7,6 +7,8 @@ import '../local_storage.dart';
 import '../services/app_state.dart';
 import '../models/booking.dart';
 import '../utils/fare_calculator.dart';
+import '../services/inspection_sync_service.dart';
+import '../services/device_config_service.dart';
 
 class InspectorScreen extends StatefulWidget {
   final String
@@ -185,25 +187,7 @@ class _InspectorScreenState extends State<InspectorScreen>
     return items;
   }
 
-  void _compareAndValidate() {
-    final manualInput = _manualCountController.text.trim();
-    if (manualInput.isEmpty) {
-      _showMessageDialog(
-          'Validation', 'Please enter the manual passenger count');
-      return;
-    }
 
-    final manualCount = int.tryParse(manualInput) ?? 0;
-    final matches = manualCount == _getPassengersOnBoard();
-
-    setState(() {
-      _isCleared = matches;
-    });
-
-    if (matches) {
-      _showMessageDialog('Verified', 'Passenger count verified successfully');
-    }
-  }
 
   void _saveInspection() async {
     final manualInput = _manualCountController.text.trim();
@@ -224,6 +208,12 @@ class _InspectorScreenState extends State<InspectorScreen>
       return;
     }
 
+    final assignedBus = await DeviceConfigService.getAssignedBus() ?? 'BUS_01';
+    final inspectorName = LocalStorage.getEmployee(signatures['inspector'] ?? '')?['name']?.toString() ?? 'Unknown';
+    final condUid = signatures['conductor'] ?? AppState.instance.conductor?['uid']?.toString() ?? '';
+    final conductorName = LocalStorage.getEmployee(condUid)?['name']?.toString() ?? AppState.instance.conductor?['name']?.toString() ?? 'Unknown';
+    final driverName = AppState.instance.driver?['name']?.toString() ?? 'Unknown';
+
     // Create and save inspection (use conductorUid from tap)
     // Generate inspection id in format: Ins followed by 10 random digits
     final rand = Random.secure();
@@ -233,16 +223,12 @@ class _InspectorScreenState extends State<InspectorScreen>
     final inspection = Inspection(
       id: inspectionId,
       timestamp: DateTime.now().toIso8601String(),
-      busNumber: 'TBD', // TODO: Get from app state
+      busNumber: assignedBus,
       tripSession: widget.routeDirection,
-      inspectorUid: signatures['inspector'],
-      inspectorName:
-          LocalStorage.getEmployee(signatures['inspector'] ?? '')?['name']
-              ?.toString(),
-      conductorUid: signatures['conductor'] ??
-          AppState.instance.conductor?['uid']?.toString() ??
-          'UNKNOWN',
-      driverUid: AppState.instance.driver?['uid']?.toString() ?? 'UNKNOWN',
+      inspectorUid: inspectorName,
+      inspectorName: inspectorName,
+      conductorUid: conductorName,
+      driverUid: driverName,
       manualPassengerCount: manualCount,
       systemPassengerCount: _getPassengersOnBoard(),
       isCleared: _isCleared,
@@ -253,6 +239,10 @@ class _InspectorScreenState extends State<InspectorScreen>
 
     try {
       await LocalStorage.saveInspection(inspection.toMap());
+      
+      // Immediately trigger background sync so data goes to Firebase right after inspection
+      InspectionSyncService().syncNow();
+      
       await _showMessageDialog('Saved', 'Inspection saved successfully');
       Navigator.pop(context);
     } catch (e) {
@@ -537,6 +527,16 @@ class _InspectorScreenState extends State<InspectorScreen>
                           child: TextField(
                             controller: _manualCountController,
                             keyboardType: TextInputType.number,
+                            onChanged: (value) {
+                              final manualCount = int.tryParse(value.trim());
+                              setState(() {
+                                if (manualCount != null) {
+                                  _isCleared = (manualCount == _getPassengersOnBoard());
+                                } else {
+                                  _isCleared = false;
+                                }
+                              });
+                            },
                             decoration: InputDecoration(
                               hintText: 'Enter count',
                               border: OutlineInputBorder(
@@ -555,20 +555,7 @@ class _InspectorScreenState extends State<InspectorScreen>
               ),
               SizedBox(height: screenH * 0.02),
 
-              // Compare button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _compareAndValidate,
-                  icon: const Icon(Icons.check_circle),
-                  label: const Text('Verify Count'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green[700],
-                    padding: EdgeInsets.symmetric(vertical: screenH * 0.015),
-                  ),
-                ),
-              ),
-              SizedBox(height: screenH * 0.02),
+
 
               // Show result
               if (_isCleared)

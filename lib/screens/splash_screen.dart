@@ -4,7 +4,7 @@ import '../local_storage.dart';
 import '../services/app_state.dart';
 import '../models/booking.dart';
 import 'home_screen.dart';
-import 'dispatch_screen.dart';
+import 'login_screen.dart';
 
 /// Splash screen: checks for saved session on app start.
 /// If logged in, navigates to last screen or RouteSelectionScreen.
@@ -41,8 +41,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
         bool validTrip = false;
         // Trust local trip status if available
-        if (localTripStatus == 'pre-departure' ||
-            localTripStatus == 'departed') {
+        if (localTripStatus == 'departed') {
           validTrip = true;
         } else if (currentTripId.isNotEmpty) {
           // Fallback: Check Firebase for trip status ONLY if local status is missing/empty
@@ -57,7 +56,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 : '';
             debugPrint(
                 '[SPLASH] Trip $currentTripId status from Firestore: "$statusRaw"');
-            if (statusRaw == 'pre-departure' || statusRaw == 'departed') {
+            if (statusRaw == 'departed') {
               validTrip = true;
             }
           } catch (e) {
@@ -69,11 +68,14 @@ class _SplashScreenState extends State<SplashScreen> {
           }
         }
 
-        if (savedConductor != null && validTrip) {
+        final savedDriver = LocalStorage.loadCurrentDriver();
+
+        if (savedConductor != null && savedDriver != null && validTrip) {
           // Session and valid trip exist — restore conductor to AppState
           debugPrint(
-              '[SPLASH] Found saved session: ${savedConductor['name']} with valid trip $currentTripId');
+              '[SPLASH] Found saved session: ${savedConductor['name']} & ${savedDriver['name']} with valid trip $currentTripId');
           AppState.instance.setConductor(savedConductor);
+          AppState.instance.setDriver(savedDriver);
 
           // Load persisted bookings for this conductor
           try {
@@ -125,24 +127,24 @@ class _SplashScreenState extends State<SplashScreen> {
             );
           }
         } else {
-          // No valid trip/session — clear all and show Dispatch Menu
+          // No valid trip/session — show Login screen
           debugPrint(
-              '[SPLASH] No valid trip/session, clearing state and showing Dispatch Menu');
+              '[SPLASH] No valid trip/session, clearing state and showing Login');
           await LocalStorage.clearSession();
           if (!mounted) return;
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const DispatchScreen()),
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
           );
         }
       } catch (e) {
         debugPrint('[SPLASH] ERROR in _checkSessionAndNavigate: $e');
         if (mounted) {
-          // On error, show Dispatch Menu
+          // On error, show Login screen
           await LocalStorage.clearSession();
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => const DispatchScreen()),
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
           );
         }
       }

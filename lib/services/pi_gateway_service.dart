@@ -105,7 +105,7 @@ class PiGatewayService {
   Future<Map<String, dynamic>> sendDispatchStatus({
     required String tripId,
     required String busNumber,
-    required String dispatcherUid,
+    required String driverUid,
     required String status,
     String? routeId,
     String? routeName,
@@ -115,7 +115,7 @@ class PiGatewayService {
       payload: {
         'tripId': tripId,
         'busNumber': busNumber,
-        'dispatcherUid': dispatcherUid,
+        'driverUid': driverUid,
         'status': status,
         'routeId': routeId,
         'routeName': routeName,

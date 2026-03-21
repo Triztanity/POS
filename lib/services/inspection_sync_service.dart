@@ -101,10 +101,10 @@ class InspectionSyncService {
   Future<void> _syncInspection(Inspection inspection,
       {int retryCount = 0}) async {
     try {
-      // Upload directly to Firestore collection 'Inspections'
+      // Upload directly to Firestore collection 'inspections'
       final map = inspection.toRemoteMap();
       await FirebaseFirestore.instance
-          .collection('Inspections')
+          .collection('inspections')
           .doc(inspection.id)
           .set(map);
       await _markInspectionSynced(inspection.id);

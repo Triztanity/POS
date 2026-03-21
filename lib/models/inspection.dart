@@ -67,19 +67,18 @@ class Inspection {
       'id': id,
       'timestamp': timestamp,
       'busNumber': busNumber,
-      'tripSession': tripSession,
       'inspectorUid': inspectorUid,
       'conductorUid': conductorUid,
       'driverUid': driverUid,
       'manualPassengerCount': manualPassengerCount,
       'systemPassengerCount': systemPassengerCount,
       'isCleared': isCleared,
+      'comments': comments ?? '',
     };
 
     // Only include discrepancyDetected when there is a discrepancy
     if (!isCleared) {
       map['discrepancyDetected'] = true;
-      if (comments != null && comments!.isNotEmpty) map['comments'] = comments;
     }
 
     return map;

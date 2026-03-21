@@ -21,11 +21,18 @@ class AppState {
 
   StreamSubscription<Map<String, dynamic>>? _nfcSub;
   bool _inspectorModalActive = false;
+  String _currentScreen = '';
 
   bool get inspectorModalActive => _inspectorModalActive;
+  String get currentScreen => _currentScreen;
 
   void setInspectorModalActive(bool v) {
     _inspectorModalActive = v;
+  }
+
+  void setCurrentScreen(String screen) {
+    debugPrint('[APP-STATE] setCurrentScreen: $screen');
+    _currentScreen = screen;
   }
 
   void setConductor(Map<String, dynamic>? conductor) {

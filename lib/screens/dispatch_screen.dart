@@ -90,7 +90,7 @@ class _DispatchScreenState extends State<DispatchScreen> {
   }
 
   Future<void> _confirmDeployWithRoute(
-      Map<String, String> route, String dispatcherUid) async {
+      Map<String, String> route, Map<String, dynamic> driverEmployee) async {
     // Capture previous conductor uid before clearing session
     final prevConductor = AppState.instance.conductor;
     final prevUid = prevConductor?['uid']?.toString();
@@ -112,7 +112,7 @@ class _DispatchScreenState extends State<DispatchScreen> {
       claimedTripId = await FirebaseDispatchService().claimAndDispatchSchedule(
         busNumber: assignedBus,
         route: route,
-        dispatcherUid: dispatcherUid,
+        driverUid: driverEmployee['uid']?.toString() ?? '',
       );
     } catch (e) {
       debugPrint(
@@ -146,9 +146,11 @@ class _DispatchScreenState extends State<DispatchScreen> {
     } catch (_) {}
 
     await LocalStorage.clearCurrentConductor();
-    await LocalStorage.clearCurrentDriver();
-    await LocalStorage.clearSession();
-    AppState.instance.clearSession();
+    AppState.instance.setConductor(null);
+
+    // Save the driver who deployed
+    AppState.instance.setDriver(driverEmployee);
+    await LocalStorage.saveCurrentDriver(driverEmployee);
 
     // Persist route into local session
     try {
@@ -168,8 +170,8 @@ class _DispatchScreenState extends State<DispatchScreen> {
     );
   }
 
-  /// Shows a dialog instructing the dispatcher to tap their NFC ID to confirm deploy.
-  Future<void> _showDispatcherConfirmDialog(
+  /// Shows a dialog instructing the driver to tap their NFC ID to confirm deploy.
+  Future<void> _showDriverConfirmDialog(
       BuildContext context, Map<String, String> route) async {
     // Reset NFC debounce so dispatcher card can be read immediately
     NFCReaderModeService.instance.resetDebounce();
@@ -192,9 +194,9 @@ class _DispatchScreenState extends State<DispatchScreen> {
             debugPrint(
                 '[DISPATCH-CONFIRM] Employee: ${employee?['name']} (role=${employee?['role']})');
 
-            if (employee != null && (employee['role'] ?? '') == 'dispatcher') {
+            if (employee != null && (employee['role'] ?? '') == 'driver') {
               debugPrint(
-                  '[DISPATCH-CONFIRM] Valid dispatcher, closing dialog and deploying');
+                  '[DISPATCH-CONFIRM] Valid driver, closing dialog and deploying');
               try {
                 await nfcSubscription.cancel();
               } catch (_) {}
@@ -203,8 +205,7 @@ class _DispatchScreenState extends State<DispatchScreen> {
               }
 
               if (mounted) {
-                await _confirmDeployWithRoute(
-                    route, employee['uid']?.toString() ?? '');
+                await _confirmDeployWithRoute(route, employee);
               }
               if (!completer.isCompleted) {
                 completer.complete();
@@ -212,7 +213,7 @@ class _DispatchScreenState extends State<DispatchScreen> {
             } else {
               if (mounted) {
                 Dialogs.showMessage(context, 'Invalid card',
-                    'Invalid card. Expected dispatcher, got ${employee?['role'] ?? 'unknown'}',
+                    'Invalid card. Expected driver, got ${employee?['role'] ?? 'unknown'}',
                     icon: Icons.error, iconColor: Colors.red);
               }
             }
@@ -239,14 +240,14 @@ class _DispatchScreenState extends State<DispatchScreen> {
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             title: Center(
               child: Text(
-                'DISPATCHER CONFIRMATION',
+                'DRIVER CONFIRMATION',
                 textAlign: TextAlign.center,
                 style:
                     const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
               ),
             ),
             content: const Text(
-              'Please tap your dispatcher ID card to confirm deploy.',
+              'Please tap your Driver ID card to confirm deploy.',
               textAlign: TextAlign.center,
             ),
             actions: [
@@ -484,7 +485,7 @@ class _DispatchScreenState extends State<DispatchScreen> {
                                       '',
                                 };
 
-                                await _showDispatcherConfirmDialog(
+                                await _showDriverConfirmDialog(
                                     context, route);
                               },
                             ),

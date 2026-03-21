@@ -44,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    AppState.instance.setCurrentScreen('home_screen');
     routeDirection = widget.routeDirection ?? 'north_to_south';
     availableStops = List.from(fareTableStops);
 
@@ -1133,6 +1134,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Prompt for driver tap before scanning; returns true if driver tapped, false if cancelled
   Future<bool> _promptForDriverTap() async {
+    // Reset debounce cache to allow immediate rescans
+    NFCReaderModeService.instance.resetDebounce();
+    
     // Ensure reader mode is active
     try {
       await NFCReaderModeService.instance.start();
@@ -1168,7 +1172,7 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: const [
               Text(
-                  'Please ask the driver to tap their ID on the device to continue scanning.'),
+                  'Please tap your Driver ID card to continue scanning.'),
               SizedBox(height: 12),
               CircularProgressIndicator(),
             ],
@@ -1491,18 +1495,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.pop(dialogContext);
                 }
 
-                // Require driver tap before allowing navigation to RecordsScreen.
-                final proceed = await _requireDriverBeforeRecords(employee);
-                if (proceed) {
-                  // Use global navigator key to avoid context issues
-                  navigatorKey.currentState?.push(
-                    MaterialPageRoute(
-                      builder: (_) => RecordsScreen(
-                          dispatcherInfo: employee,
-                          routeDirection: routeDirection),
-                    ),
-                  );
-                }
+                // Use global navigator key to avoid context issues
+                navigatorKey.currentState?.push(
+                  MaterialPageRoute(
+                    builder: (_) => RecordsScreen(
+                        dispatcherInfo: employee,
+                        routeDirection: routeDirection),
+                  ),
+                );
                 if (!completer.isCompleted) {
                   completer.complete();
                 }
@@ -1543,7 +1543,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             content: const Text(
-              'Please tap your dispatcher ID card.',
+              'Please tap your Dispatcher ID card.',
               textAlign: TextAlign.center,
             ),
             actions: [
@@ -1568,88 +1568,5 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Prompts for driver to tap their ID card. Returns true if a driver tapped
-  /// within the timeout/cancel window, false otherwise.
-  Future<bool> _requireDriverBeforeRecords(
-      Map<String, dynamic> dispatcherInfo) async {
-    StreamSubscription? sub;
-    final completer = Completer<bool>();
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        sub ??= NFCReaderModeService.instance.onTag.listen((user) async {
-          final role = (user['role'] ?? '').toString().toLowerCase();
-          if (role == 'driver') {
-            // Register driver in global AppState
-            AppState.instance.setDriver(user);
-            // close dialog
-            try {
-              await sub?.cancel();
-            } catch (_) {}
-            if (Navigator.canPop(ctx)) Navigator.pop(ctx);
-            if (!completer.isCompleted) completer.complete(true);
-          } else {
-            // Inform invalid card tapped
-            Dialogs.showMessage(context, 'Invalid Card',
-                'Card tapped is not a driver (role=$role). Please ask the driver to tap.');
-          }
-        });
-
-        return AlertDialog(
-          elevation: 10,
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: Center(
-            child: Text(
-              'DRIVER REQUIRED',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Text(
-                'Please ask the driver to tap their ID on the device to continue.',
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 12),
-              CircularProgressIndicator(),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                try {
-                  await sub?.cancel();
-                } catch (_) {}
-                if (Navigator.canPop(ctx)) Navigator.pop(ctx);
-                if (!completer.isCompleted) completer.complete(false);
-              },
-              child: const Text('Cancel'),
-            ),
-          ],
-        );
-      },
-    );
-
-    // Timeout to auto-close dialog after 30s
-    Future.delayed(const Duration(seconds: 30)).then((_) async {
-      if (!completer.isCompleted) {
-        try {
-          await sub?.cancel();
-        } catch (_) {}
-        try {
-          if (Navigator.canPop(context)) Navigator.pop(context);
-        } catch (_) {}
-        completer.complete(false);
-      }
-    });
-
-    return completer.future;
-  }
 }

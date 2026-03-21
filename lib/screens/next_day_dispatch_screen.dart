@@ -8,7 +8,7 @@ import '../services/app_state.dart';
 import '../services/device_config_service.dart';
 import '../services/nfc_reader_mode_service.dart';
 import 'login_screen.dart';
-import 'dispatch_screen.dart';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../utils/dialogs.dart';
 import '../services/firebase_dispatch_service.dart';
@@ -102,7 +102,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
   }
 
   Future<void> _confirmDeployWithRoute(
-      Map<String, String> route, String dispatcherUid) async {
+      Map<String, String> route, Map<String, dynamic> driverEmployee) async {
     final prevConductor = AppState.instance.conductor;
     final prevUid = prevConductor?['uid']?.toString();
 
@@ -121,7 +121,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
       claimedTripId = await FirebaseDispatchService().claimAndDispatchSchedule(
         busNumber: assignedBus,
         route: route,
-        dispatcherUid: dispatcherUid,
+        driverUid: driverEmployee['uid']?.toString() ?? '',
       );
     } catch (e) {
       debugPrint(
@@ -156,8 +156,11 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
     } catch (_) {}
 
     await LocalStorage.clearCurrentConductor();
-    await LocalStorage.clearCurrentDriver();
-    AppState.instance.clearSession();
+    AppState.instance.setConductor(null);
+    
+    // Save the driver who deployed
+    AppState.instance.setDriver(driverEmployee);
+    await LocalStorage.saveCurrentDriver(driverEmployee);
 
     // Persist route into local session
     try {
@@ -181,7 +184,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
     );
   }
 
-  Future<void> _showDispatcherConfirmDialog(
+  Future<void> _showDriverConfirmDialog(
       BuildContext context, Map<String, String> route) async {
     NFCReaderModeService.instance.resetDebounce();
     final completer = Completer<void>();
@@ -196,7 +199,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
           try {
             final tappedUid = data['uid']?.toString() ?? '';
             final employee = LocalStorage.getEmployee(tappedUid);
-            if (employee != null && (employee['role'] ?? '') == 'dispatcher') {
+            if (employee != null && (employee['role'] ?? '') == 'driver') {
               try {
                 await nfcSubscription.cancel();
               } catch (_) {}
@@ -204,8 +207,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
                 Navigator.pop(dialogContext);
               }
               if (mounted) {
-                await _confirmDeployWithRoute(
-                    route, employee['uid']?.toString() ?? '');
+                await _confirmDeployWithRoute(route, employee);
               }
               if (!completer.isCompleted) {
                 completer.complete();
@@ -213,7 +215,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
             } else {
               if (mounted) {
                 Dialogs.showMessage(context, 'Invalid card',
-                    'Invalid card. Expected dispatcher, got ${employee?['role'] ?? 'unknown'}',
+                    'Invalid card. Expected driver, got ${employee?['role'] ?? 'unknown'}',
                     icon: Icons.error, iconColor: Colors.red);
               }
             }
@@ -240,14 +242,14 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             title: Center(
               child: Text(
-                'DISPATCHER CONFIRMATION',
+                'DRIVER CONFIRMATION',
                 textAlign: TextAlign.center,
                 style:
                     const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
               ),
             ),
             content: const Text(
-              'Please tap your dispatcher ID card to confirm deploy.',
+              'Please tap your Driver ID card to confirm deploy.',
               textAlign: TextAlign.center,
             ),
             actions: [
@@ -274,7 +276,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
     await completer.future;
   }
 
-  Future<void> _toggleLockWithDispatcher() async {
+  Future<void> _toggleLockWithDriver() async {
     NFCReaderModeService.instance.resetDebounce();
     final completer = Completer<void>();
     final action = _isLocked ? 'UNLOCK' : 'LOCK';
@@ -289,7 +291,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
           try {
             final tappedUid = data['uid']?.toString() ?? '';
             final employee = LocalStorage.getEmployee(tappedUid);
-            if (employee != null && (employee['role'] ?? '') == 'dispatcher') {
+            if (employee != null && (employee['role'] ?? '') == 'driver') {
               try {
                 await nfcSubscription.cancel();
               } catch (_) {}
@@ -305,7 +307,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
             } else {
               if (mounted) {
                 Dialogs.showMessage(context, 'Invalid card',
-                    'Invalid card. Expected dispatcher, got ${employee?['role'] ?? 'unknown'}',
+                    'Invalid card. Expected driver, got ${employee?['role'] ?? 'unknown'}',
                     icon: Icons.error, iconColor: Colors.red);
               }
             }
@@ -339,7 +341,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
               ),
             ),
             content: Text(
-              'Please tap your dispatcher ID card to $action.',
+              'Please tap your Driver ID card to $action.',
               textAlign: TextAlign.center,
             ),
             actions: [
@@ -387,7 +389,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(
-                            builder: (_) => const DispatchScreen()),
+                            builder: (_) => const LoginScreen()),
                       );
                     },
                   ),
@@ -542,12 +544,12 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
                               '',
                         };
 
-                        await _showDispatcherConfirmDialog(context, route);
+                        await _showDriverConfirmDialog(context, route);
                       },
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton(
-                      onPressed: () => _toggleLockWithDispatcher(),
+                      onPressed: () => _toggleLockWithDriver(),
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
                             _isLocked ? Colors.orange : Colors.grey[700],

@@ -8,9 +8,8 @@ import '../services/device_identifier_service.dart';
 import '../models/booking.dart';
 import '../local_storage.dart';
 import '../utils/fare_calculator.dart';
-import 'dispatch_screen.dart';
-import 'records_screen.dart';
 import 'login_screen.dart';
+import 'records_screen.dart';
 import '../services/app_state.dart';
 import '../utils/dialogs.dart';
 
@@ -428,7 +427,7 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
                           Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const DispatchScreen()),
+                                builder: (_) => const LoginScreen()),
                           );
                         }
                       },
@@ -735,7 +734,6 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
           'manualMode': LocalStorage.isManualMode(),
           'walkins': walkins,
           'bookings': bookings,
-          'inspections': widget.inspections,
           'conductor': {'name': widget.tripInfo['conductor'] ?? ''},
           'driver': {'name': widget.tripInfo['driver'] ?? ''},
           'dispatcher': {'name': widget.tripInfo['dispatcher'] ?? ''},
@@ -773,6 +771,23 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
                 context, 'Uploaded', 'Arrival report uploaded');
           }
         }
+
+        // Finalize current trip locally to mark it complete
+        await LocalStorage.finalizeTrip(tripId);
+
+        try {
+          final prevConductor = AppState.instance.conductor;
+          final prevUid = prevConductor?['uid']?.toString();
+          BookingManager().clearBookings();
+          if (prevUid != null && prevUid.isNotEmpty) {
+            await LocalStorage.deleteBookingsForConductor(prevUid);
+          }
+        } catch (_) {}
+
+        // Complete the trip globally: clear all lingering conductor/driver/trip sessions
+        await LocalStorage.clearSession();
+        AppState.instance.clearSession();
+
       } catch (e) {
         if (mounted) {
           await Dialogs.showMessage(
