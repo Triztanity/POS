@@ -187,8 +187,6 @@ class _InspectorScreenState extends State<InspectorScreen>
     return items;
   }
 
-
-
   void _saveInspection() async {
     final manualInput = _manualCountController.text.trim();
     if (manualInput.isEmpty) {
@@ -209,10 +207,20 @@ class _InspectorScreenState extends State<InspectorScreen>
     }
 
     final assignedBus = await DeviceConfigService.getAssignedBus() ?? 'BUS_01';
-    final inspectorName = LocalStorage.getEmployee(signatures['inspector'] ?? '')?['name']?.toString() ?? 'Unknown';
-    final condUid = signatures['conductor'] ?? AppState.instance.conductor?['uid']?.toString() ?? '';
-    final conductorName = LocalStorage.getEmployee(condUid)?['name']?.toString() ?? AppState.instance.conductor?['name']?.toString() ?? 'Unknown';
-    final driverName = AppState.instance.driver?['name']?.toString() ?? 'Unknown';
+    final inspectorName =
+        LocalStorage.getEmployee(signatures['inspector'] ?? '')?['name']
+                ?.toString() ??
+            'Unknown';
+    final condUid = signatures['conductor'] ??
+        AppState.instance.conductor?['uid']?.toString() ??
+        '';
+    final conductorName =
+        LocalStorage.getEmployee(condUid)?['name']?.toString() ??
+            AppState.instance.conductor?['name']?.toString() ??
+            'Unknown';
+    final driverName =
+        AppState.instance.driver?['name']?.toString() ?? 'Unknown';
+    final tripId = LocalStorage.getCurrentTripId();
 
     // Create and save inspection (use conductorUid from tap)
     // Generate inspection id in format: Ins followed by 10 random digits
@@ -227,6 +235,7 @@ class _InspectorScreenState extends State<InspectorScreen>
       tripSession: widget.routeDirection,
       inspectorUid: inspectorName,
       inspectorName: inspectorName,
+      tripId: tripId.isNotEmpty ? tripId : null,
       conductorUid: conductorName,
       driverUid: driverName,
       manualPassengerCount: manualCount,
@@ -239,10 +248,10 @@ class _InspectorScreenState extends State<InspectorScreen>
 
     try {
       await LocalStorage.saveInspection(inspection.toMap());
-      
+
       // Immediately trigger background sync so data goes to Firebase right after inspection
       InspectionSyncService().syncNow();
-      
+
       await _showMessageDialog('Saved', 'Inspection saved successfully');
       Navigator.pop(context);
     } catch (e) {
@@ -531,7 +540,8 @@ class _InspectorScreenState extends State<InspectorScreen>
                               final manualCount = int.tryParse(value.trim());
                               setState(() {
                                 if (manualCount != null) {
-                                  _isCleared = (manualCount == _getPassengersOnBoard());
+                                  _isCleared =
+                                      (manualCount == _getPassengersOnBoard());
                                 } else {
                                   _isCleared = false;
                                 }
@@ -554,8 +564,6 @@ class _InspectorScreenState extends State<InspectorScreen>
                 ],
               ),
               SizedBox(height: screenH * 0.02),
-
-
 
               // Show result
               if (_isCleared)

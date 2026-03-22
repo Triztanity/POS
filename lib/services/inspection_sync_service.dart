@@ -4,6 +4,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/inspection.dart';
 import '../local_storage.dart';
+import 'sms_status_sender_service.dart';
 
 /// Service to sync inspection data to remote dispatch dashboard
 class InspectionSyncService {
@@ -97,30 +98,49 @@ class InspectionSyncService {
     }
   }
 
-  /// Sync a single inspection with retry logic
+  /// Sync a single inspection: try Firestore first, fall back to SMS gateway.
   Future<void> _syncInspection(Inspection inspection,
       {int retryCount = 0}) async {
-    try {
-      // Upload directly to Firestore collection 'inspections'
-      final map = inspection.toRemoteMap();
-      await FirebaseFirestore.instance
-          .collection('inspections')
-          .doc(inspection.id)
-          .set(map);
-      await _markInspectionSynced(inspection.id);
-      debugPrint(
-          '[INSPECTION_SYNC] Synced inspection ${inspection.id} to Firestore');
-    } catch (e) {
-      final errorMsg = 'Sync failed: $e';
-      debugPrint('[INSPECTION_SYNC] Error syncing ${inspection.id}: $e');
-      await _handleSyncError(inspection.id, errorMsg);
-
-      // Retry on network errors
-      if (retryCount < _maxRetries) {
-        await Future.delayed(
-            Duration(seconds: _syncRetryDelay.inSeconds * (retryCount + 1)));
-        await _syncInspection(inspection, retryCount: retryCount + 1);
+    // --- Primary: Firestore ---
+    if (_isOnline) {
+      try {
+        final map = inspection.toRemoteMap();
+        await FirebaseFirestore.instance
+            .collection('inspections')
+            .doc(inspection.id)
+            .set(map);
+        await _markInspectionSynced(inspection.id);
+        debugPrint(
+            '[INSPECTION_SYNC] Synced inspection ${inspection.id} to Firestore');
+        return;
+      } catch (e) {
+        debugPrint('[INSPECTION_SYNC] Firestore upload failed for ${inspection.id}: $e');
+        // Fall through to SMS fallback
       }
+    }
+
+    // --- Fallback: SMS gateway (INS|{json}) ---
+    try {
+      debugPrint('[INSPECTION_SYNC] Attempting SMS fallback for ${inspection.id}');
+      final result = await SmsStatusSenderService().sendInspectionSms(inspection);
+      if (result['success'] == true) {
+        // Mark synced via SMS so we don't retry endlessly.
+        await _markInspectionSynced(inspection.id);
+        debugPrint('[INSPECTION_SYNC] Sent inspection ${inspection.id} via SMS gateway');
+        return;
+      }
+    } catch (e) {
+      debugPrint('[INSPECTION_SYNC] SMS fallback failed for ${inspection.id}: $e');
+    }
+
+    // --- Both paths failed: record error and schedule retry ---
+    const errorMsg = 'Both Firestore and SMS fallback failed';
+    await _handleSyncError(inspection.id, errorMsg);
+
+    if (retryCount < _maxRetries) {
+      await Future.delayed(
+          Duration(seconds: _syncRetryDelay.inSeconds * (retryCount + 1)));
+      await _syncInspection(inspection, retryCount: retryCount + 1);
     }
   }
 

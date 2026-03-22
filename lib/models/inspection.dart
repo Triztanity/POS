@@ -6,6 +6,7 @@ class Inspection {
   final String tripSession;
   final String? inspectorUid;
   final String? inspectorName;
+  final String? tripId;
   final String conductorUid;
   final String driverUid;
   final int manualPassengerCount;
@@ -26,6 +27,7 @@ class Inspection {
     required this.tripSession,
     this.inspectorUid,
     this.inspectorName,
+    this.tripId,
     required this.conductorUid,
     required this.driverUid,
     required this.manualPassengerCount,
@@ -47,6 +49,7 @@ class Inspection {
       'tripSession': tripSession,
       'inspectorUid': inspectorUid,
       'inspectorName': inspectorName,
+      'tripId': tripId,
       'conductorUid': conductorUid,
       'driverUid': driverUid,
       'manualPassengerCount': manualPassengerCount,
@@ -70,6 +73,7 @@ class Inspection {
       'inspectorUid': inspectorUid,
       'conductorUid': conductorUid,
       'driverUid': driverUid,
+      'tripId': tripId ?? '',
       'manualPassengerCount': manualPassengerCount,
       'systemPassengerCount': systemPassengerCount,
       'isCleared': isCleared,
@@ -92,6 +96,7 @@ class Inspection {
       tripSession: m['tripSession']?.toString() ?? '',
       inspectorUid: m['inspectorUid']?.toString(),
       inspectorName: m['inspectorName']?.toString(),
+      tripId: m['tripId']?.toString(),
       conductorUid: m['conductorUid']?.toString() ?? '',
       driverUid: m['driverUid']?.toString() ?? '',
       manualPassengerCount: (m['manualPassengerCount'] is int)

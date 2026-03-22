@@ -36,13 +36,24 @@ class InspectorNFCHandler {
         final role = user['role']?.toString() ?? '';
         final name = user['name']?.toString() ?? '';
 
-        // Only allow inspector navigation if logged in AND on the home screen
+        // Only allow inspector navigation if logged in, on the home screen, AND it is the top-most active route
         final conductor = AppState.instance.conductor;
         final driver = AppState.instance.driver;
         final isLoggedIn = conductor != null && driver != null;
         final isOnHomeScreen = AppState.instance.currentScreen == 'home_screen';
 
-        if (role.toLowerCase() == 'inspector' && isLoggedIn && isOnHomeScreen) {
+        bool isTopRouteFirst = false;
+        if (_navigatorKey != null && _navigatorKey!.currentState != null) {
+          _navigatorKey!.currentState!.popUntil((route) {
+            isTopRouteFirst = route.isFirst;
+            return true; // We don't want to actually pop anything
+          });
+        }
+
+        if (role.toLowerCase() == 'inspector' &&
+            isLoggedIn &&
+            isOnHomeScreen &&
+            isTopRouteFirst) {
           debugPrint(
               '[INSPECTOR-HANDLER] Inspector card detected! Name=$name, attempting navigation');
           _navigateToInspector();
