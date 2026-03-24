@@ -296,12 +296,20 @@ class SmsBookingAlertService {
         }
 
         final liveStatus = liveStatusByBookingId[bookingId];
-        if (liveStatus == null) {
+        if (liveStatus != null) {
+          item['status'] = liveStatus;
+          filtered.add(item);
           continue;
         }
 
-        item['status'] = liveStatus;
-        filtered.add(item);
+        // Keep SMS-only bookings during fallback mode; they may not exist in
+        // Firestore briefly until the live state arrives or sync updates.
+        final source = (item['source'] ?? '').toString().toLowerCase();
+        final status = (item['status'] ?? '').toString().trim().toLowerCase();
+        if (source == 'sms' && (status == 'waiting' || status == 'on-board')) {
+          filtered.add(item);
+          continue;
+        }
       }
 
       if (filtered.length != existing.length) {
@@ -487,7 +495,22 @@ class SmsBookingAlertService {
   }
 
   Map<String, dynamic>? _tryParseKeyValue(String body) {
-    final normalized = body.replaceAll('\n', '|').replaceAll(';', '|');
+    var normalized = body
+        .replaceAll('\r', ' ')
+        .replaceAll('\n', '|')
+        .replaceAll(';', '|')
+        .replaceAll(',', '|')
+        .replaceAll('[', '')
+        .replaceAll(']', '');
+
+    const bookingPrefix = 'BOOKING';
+    if (normalized.toUpperCase().startsWith(bookingPrefix)) {
+      final suffix = normalized.substring(bookingPrefix.length);
+      if (suffix.isNotEmpty && !suffix.startsWith('|')) {
+        normalized = '$bookingPrefix|$suffix';
+      }
+    }
+
     final parts = normalized.split('|').map((e) => e.trim()).toList();
     if (parts.isEmpty) return null;
 
@@ -496,11 +519,23 @@ class SmsBookingAlertService {
     }
 
     final values = <String, String>{};
+    const keyAliases = {
+      'i': 'bookingid',
+      'o': 'origin',
+      'd': 'destination',
+      's': 'seats',
+      'x': 'status',
+      'b': 'busnumber',
+      't': 'tripid',
+      'r': 'busroute',
+    };
+
     for (final p in parts) {
       final idx = p.indexOf('=');
       if (idx <= 0) continue;
-      final key = p.substring(0, idx).trim().toLowerCase();
+      var key = p.substring(0, idx).trim().toLowerCase();
       final value = p.substring(idx + 1).trim();
+      key = keyAliases[key] ?? key;
       values[key] = value;
     }
 
@@ -514,15 +549,20 @@ class SmsBookingAlertService {
       values['seats'] ?? values['qty'] ?? values['passengers'] ?? '',
     );
 
-    if (origin.isEmpty || seats == null) return null;
+    final type = (values['type'] ?? 'booking.alert').toString().toLowerCase();
+    final status = (values['status'] ?? '').toString().toLowerCase();
+    final isStatusMessage = type == 'booking.status' || status.isNotEmpty;
+
+    if (bookingId.isEmpty) return null;
+    if (!isStatusMessage && (origin.isEmpty || seats == null)) return null;
 
     return {
-      'type': (values['type'] ?? 'booking.alert').toString().toLowerCase(),
-      'status': (values['status'] ?? '').toString().toLowerCase(),
+      'type': type,
+      'status': status,
       'bookingId': bookingId,
       'origin': origin,
       'destination': destination,
-      'seats': seats,
+      'seats': seats ?? 0,
       'station': values['station'] ?? '',
       'busNumber': values['busnumber'] ?? '',
       'busRoute':

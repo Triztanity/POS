@@ -455,15 +455,26 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
       final now = DateTime.now();
       final timeOfDay = TimeOfDay.now();
       // Ensure we use normalized route value when printing and saving
-      final routeValue =
+      final routeRaw =
           (widget.tripInfo['route'] ?? '').toString().toLowerCase();
+      final routeDirection =
+          routeRaw.contains('south') || routeRaw == 'south_to_north'
+              ? 'South'
+              : 'North';
+      final routeLabel =
+          (routeRaw.contains('south') || routeRaw == 'south_to_north')
+              ? 'BATANGAS → NASUGBU'
+              : 'NASUGBU → BATANGAS';
 
-      // Separate walk-in and booking passengers
+      // Separate walk-in and booking passengers, expanding seat-level entries
+      final expandedBookings = widget.bookings
+          .expand((b) => b.expandToIndividualPassengers())
+          .toList();
       final walkInPassengers =
-          widget.bookings.where((b) => b.passengerUid == null).toList();
+          expandedBookings.where((b) => b.passengerUid == null).toList();
       final bookingOnlyPassengers =
-          widget.bookings.where((b) => b.passengerUid != null).toList();
-      final allPassengers = widget.bookings.toList();
+          expandedBookings.where((b) => b.passengerUid != null).toList();
+      final allPassengers = expandedBookings;
 
       debugPrint('[ARRIVAL-REPORT] Total bookings: ${widget.bookings.length}');
       debugPrint(
@@ -484,8 +495,8 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
           walkInPassengers.where((b) => b.passengerType == 'SENIOR').toList();
       final pwdBookings =
           walkInPassengers.where((b) => b.passengerType == 'PWD').toList();
-      final baggageBookings =
-          walkInPassengers.where((b) => b.passengerType == 'BAGGAGE').toList();
+      final childBookings =
+          walkInPassengers.where((b) => b.passengerType == 'CHILD').toList();
 
       // Ticket-type counts should include both bookings and walk-ins
       final fullFareCount =
@@ -496,8 +507,8 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
           allPassengers.where((b) => b.passengerType == 'SENIOR').length;
       final pwdCount =
           allPassengers.where((b) => b.passengerType == 'PWD').length;
-      final baggageCount =
-          allPassengers.where((b) => b.passengerType == 'BAGGAGE').length;
+      final childCount =
+          allPassengers.where((b) => b.passengerType == 'CHILD').length;
 
       // Calculate totals
       double fullFareSales =
@@ -505,10 +516,10 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
       double studentSales = studentBookings.fold(0, (sum, b) => sum + b.amount);
       double seniorSales = seniorBookings.fold(0, (sum, b) => sum + b.amount);
       double pwdSales = pwdBookings.fold(0, (sum, b) => sum + b.amount);
-      double baggageSales = baggageBookings.fold(0, (sum, b) => sum + b.amount);
+      double childSales = childBookings.fold(0, (sum, b) => sum + b.amount);
 
       double cashSales =
-          fullFareSales + studentSales + seniorSales + pwdSales + baggageSales;
+          fullFareSales + studentSales + seniorSales + pwdSales + childSales;
       double totalBookingSales =
           bookingOnlyPassengers.fold(0, (sum, b) => sum + b.amount);
 
@@ -516,38 +527,44 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
       await _printer.setAlignment(1);
       await _printer.setTextBold(true);
       await _printer.setTextSize(28);
-      await _printer.printText('BATMAN STAREXPRESS\n');
       await _printer.printText('ARRIVAL REPORT\n');
-      await _printer.nextLine(1);
+      await _printer.nextLine(0);
 
       await _printer.setTextSize(20);
       await _printer.setTextBold(false);
-      await _printer.setAlignment(0);
+      await _printer.printText('${LocalStorage.getCurrentTripId()}\n');
+      await _printer.printText('${widget.tripInfo['vehicleNo'] ?? ''}\n');
+      await _printer.nextLine(0);
 
-      // Key/value header block
-      await _printer.printTableText(['Opening', 'REF-0001'], [6, 4], [0, 2]);
-      await _printer.printTableText(['Closing', 'REF-0001'], [6, 4], [0, 2]);
-      await _printer.printTableText(
-          ['DATE', now.toLocal().toString().split(' ')[0]], [6, 4], [0, 2]);
+      await _printer.setAlignment(0);
+      await _printer.printTableText([
+        'DATE',
+        '${[
+          'Mon',
+          'Tue',
+          'Wed',
+          'Thu',
+          'Fri',
+          'Sat',
+          'Sun'
+        ][now.weekday - 1]} ${now.toLocal().toString().split(' ')[0]}'
+      ], [
+        6,
+        4
+      ], [
+        0,
+        2
+      ]);
       await _printer
           .printTableText(['TIME', timeOfDay.format(context)], [6, 4], [0, 2]);
-      // Use trip ID for printed reports - right column, single-row table; reduce size to avoid wrapping
-      await _printer.setTextSize(18);
-      await _printer.setTextBold(true);
-      await _printer.printTableText(
-          ['TRIP ID', LocalStorage.getCurrentTripId()], [4, 6], [0, 2]);
-      await _printer.setTextBold(false);
-      await _printer.setTextSize(20);
-      await _printer.printTableText(
-          ['VEHICLE NO.', widget.tripInfo['vehicleNo']!], [6, 4], [0, 2]);
 
-      await _printer.nextLine(1);
+      await _printer.nextLine(0);
       await _printer.setAlignment(1);
       await _printer.setTextBold(true);
-      await _printer.printText('$routeValue\n');
+      await _printer.printText('$routeLabel\n');
       await _printer.setTextBold(false);
-      await _printer.printText('${widget.tripInfo['route']}\n');
-      await _printer.nextLine(1);
+      await _printer.printText('$routeDirection\n');
+      await _printer.nextLine(0);
 
       await _printer.setAlignment(0);
       await _printer.printTableText(
@@ -561,7 +578,7 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
       final totalTickets = widget.bookings.length;
       await _printer.printTableText(
           ['NO. OF TICKETS', totalTickets.toString()], [6, 4], [0, 2]);
-      await _printer.nextLine(1);
+      await _printer.nextLine(0);
 
       // Ticket counts per type
       await _printer.setTextBold(true);
@@ -579,7 +596,7 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
       await _printer
           .printTableText(['PWD', pwdCount.toString()], [6, 4], [0, 2]);
       await _printer
-          .printTableText(['Baggage', baggageCount.toString()], [6, 4], [0, 2]);
+          .printTableText(['Child', childCount.toString()], [6, 4], [0, 2]);
       await _printer.nextLine(1);
 
       // Global counters for walk-in and booking ticket numbering
@@ -595,15 +612,37 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
         await _printer.printText('$title\n');
         await _printer.setAlignment(0);
         await _printer.setTextBold(false);
-        // Column widths: Tkt#=2, Time=3, From=3, To=3, Amt=3
-        // Alignment: Tkt# left, Time center, From center, To center, Amt center
-        await _printer.printTableText(['Tkt#', 'Time', 'From', 'To', 'Amt'],
-            [2, 3, 3, 3, 3], [0, 1, 1, 1, 1]);
+        // Use combined from-to plus ticket type column to save space.
+        // Column widths: Tkt#=2, Time=3, From-To=4, Type=3, Amt=3
+        // Alignment: Tkt# left, others center.
+        await _printer.printTableText(
+            ['Tkt#', 'Time', 'From-To', 'Type', 'Amt'],
+            [2, 3, 4, 3, 3],
+            [0, 1, 1, 1, 1]);
         for (var b in list) {
-          // Use km-only values for From/To columns (e.g., "0", "70").
-          // Fallback to empty string when km cannot be resolved.
+          // Combine from / to into a single short range label (e.g., "52-10").
           final fromPlace = FareTable.getKmString(b.fromLocation);
           final toPlace = FareTable.getKmString(b.toLocation);
+          final fromTo = fromPlace.isNotEmpty && toPlace.isNotEmpty
+              ? '$fromPlace-$toPlace'
+              : (fromPlace.isNotEmpty ? fromPlace : toPlace);
+
+          // Print human-friendly type label: Full (REGULAR), Student, Senior, PWD, Baggage
+          final typeLabel = (b.passengerType ?? 'REGULAR').toUpperCase() ==
+                  'REGULAR'
+              ? 'Full'
+              : (b.passengerType ?? '').toString().toLowerCase() == 'student'
+                  ? 'Student'
+                  : (b.passengerType ?? '').toString().toLowerCase() == 'senior'
+                      ? 'Senior'
+                      : (b.passengerType ?? '').toString().toLowerCase() ==
+                              'pwd'
+                          ? 'PWD'
+                          : (b.passengerType ?? '').toString().toLowerCase() ==
+                                  'child'
+                              ? 'Child'
+                              : 'Full';
+
           // Format amount without .00 if whole number
           final amtDisplay = b.amount % 1 == 0
               ? b.amount.toInt().toString()
@@ -614,9 +653,24 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
               ? 'B${bookingCounter.toString().padLeft(3, '0')}'
               : 'W${walkinCounter.toString().padLeft(3, '0')}';
 
+          // Compact 24-hour time: convert AM/PM if present
+          var timeText = b.time;
+          final timeRe = RegExp(r'^(\d{1,2}):(\d{2})\s*([AP]M)\s* ?',
+              caseSensitive: false);
+          final m = timeRe.firstMatch(timeText);
+          if (m != null) {
+            final h = int.tryParse(m.group(1) ?? '0') ?? 0;
+            final min = m.group(2) ?? '00';
+            final suffix = m.group(3)?.toUpperCase();
+            var hh = h;
+            if (suffix == 'PM' && h < 12) hh = h + 12;
+            if (suffix == 'AM' && h == 12) hh = 0;
+            timeText = '${hh.toString().padLeft(2, '0')}:${min}';
+          }
+
           await _printer.printTableText(
-              [tktLabel, b.time, fromPlace, toPlace, amtDisplay],
-              [2, 3, 3, 3, 3],
+              [tktLabel, timeText, fromTo, typeLabel, amtDisplay],
+              [2, 3, 4, 3, 3],
               [0, 1, 1, 1, 1]);
 
           if (isBooking) {
@@ -628,13 +682,17 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
         await _printer.nextLine(1);
       }
 
-      // Print walk-in groups using WALK-IN title
-      await printList('WALK-IN', fullFareBookings, isBooking: false);
-      await printList('STUDENT', studentBookings, isBooking: false);
-      await printList('SENIOR CITIZEN', seniorBookings, isBooking: false);
-      await printList('PWD', pwdBookings, isBooking: false);
-      await printList('BAGGAGE', baggageBookings, isBooking: false);
-      // Booking tickets use bookingCounter labeling
+      // Print walk-in section (all walk-in types combined)
+      final combinedWalkInPassengers = [
+        ...fullFareBookings,
+        ...studentBookings,
+        ...seniorBookings,
+        ...pwdBookings,
+        ...childBookings,
+      ];
+      await printList('WALK-IN', combinedWalkInPassengers, isBooking: false);
+
+      // Booking tickets section
       await printList('BOOKING', bookingOnlyPassengers, isBooking: true);
 
       // Sales summary
@@ -646,12 +704,9 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
           [6, 4],
           [0, 2]);
       await _printer.nextLine(1);
+      final totalRevenue = cashSales + totalBookingSales;
       await _printer.printTableText(
-          ['TOTAL CASH SALES', cashSales.toStringAsFixed(2)], [6, 4], [0, 2]);
-      await _printer.printTableText(
-          ['TOTAL BOOKING SALES', totalBookingSales.toStringAsFixed(2)],
-          [6, 4],
-          [0, 2]);
+          ['TOTAL REVENUE', totalRevenue.toStringAsFixed(2)], [6, 4], [0, 2]);
       await _printer.nextLine(3);
       // If manual mode was enabled, print a centered marker for auditors at bottom
       if (LocalStorage.isManualMode()) {
@@ -787,7 +842,6 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
         // Complete the trip globally: clear all lingering conductor/driver/trip sessions
         await LocalStorage.clearSession();
         AppState.instance.clearSession();
-
       } catch (e) {
         if (mounted) {
           await Dialogs.showMessage(

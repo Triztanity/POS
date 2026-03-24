@@ -21,7 +21,8 @@ class BookingStatusOrchestratorService {
 
   static const String _queueBoxName = 'booking_status_pending';
   static const String _queueKey = 'items';
-  static const int _smsFallbackDelayMs = 45000;
+  static const int _smsFallbackDelayMs =
+      15000; // faster fallback for offline signal
 
   StreamSubscription<ConnectivityResult>? _connectivitySub;
   Timer? _flushTimer;
@@ -40,7 +41,7 @@ class BookingStatusOrchestratorService {
       }
     });
 
-    _flushTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    _flushTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       flushPending();
     });
 
@@ -327,7 +328,15 @@ class BookingStatusOrchestratorService {
   Future<bool> _isOnline() async {
     try {
       final result = await _connectivity.checkConnectivity();
-      return result != ConnectivityResult.none;
+      if (result == ConnectivityResult.none) return false;
+
+      // On flaky networks, confirm Firestore connectivity quickly.
+      try {
+        await _firestore.collection('bookings_new').limit(1).get();
+        return true;
+      } catch (_) {
+        return false;
+      }
     } catch (_) {
       return false;
     }

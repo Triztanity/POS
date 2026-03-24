@@ -6,6 +6,7 @@ import '../models/scanned_ticket.dart';
 import '../services/qr_validation_service.dart';
 import '../services/ticket_printer.dart';
 import '../local_storage.dart';
+import '../utils/fare_calculator.dart';
 import 'booking_confirmation_screen.dart';
 
 /// QR Scanner Screen - Complete flow with validation and ticket printing
@@ -44,6 +45,26 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
   void dispose() {
     controller.dispose();
     super.dispose();
+  }
+
+  String _formatDate(DateTime dt) {
+    final weekday =
+        ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][dt.weekday - 1];
+    return '$weekday ${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatTime12(DateTime dt) {
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    final h12 = ((dt.hour + 11) % 12 + 1).toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '$h12:$m $period';
+  }
+
+  String _calculateDistance(String origin, String destination) {
+    final originEntry = FareTable.getEntryByPlace(origin);
+    final destEntry = FareTable.getEntryByPlace(destination);
+    if (originEntry == null || destEntry == null) return '0';
+    return (originEntry.km - destEntry.km).abs().toString();
   }
 
   Future<void> _processQr(String rawQrData) async {
@@ -110,9 +131,19 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
 
       // Step 5: Extract fare data from passenger type selection
       final passengerType = result['passengerType'] as String;
+      final passengerTypes = (result['passengerTypes'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [passengerType];
+      final perSeatFares = (result['perSeatFares'] as List<dynamic>?)
+              ?.map((e) => double.tryParse(e.toString()) ?? 0.0)
+              .toList() ??
+          [result['finalFare'] as double];
+      final perSeatTotal = perSeatFares.fold(0.0, (sum, fare) => sum + fare);
       final originalFare = result['originalFare'] as double;
       final discountAmount = result['discountAmount'] as double;
-      final finalFare = result['finalFare'] as double;
+      final finalFare =
+          perSeatTotal > 0 ? perSeatTotal : result['finalFare'] as double;
 
       // Step 6: Create scanned ticket record
       final scannedTicket = ScannedTicket(
@@ -125,7 +156,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         destination: qrData.destination,
         busNumber: qrData.assignedBusNumber,
         routeDirection: widget.routeDirection,
-        passengerType: passengerType,
+        passengerType: passengerTypes.length > 1 ? 'MULTI' : passengerType,
         originalFare: originalFare,
         discountAmount: discountAmount,
         finalFare: finalFare,
@@ -139,22 +170,34 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       final ticketRouteValue =
           widget.routeDirection == 'north_to_south' ? 'north' : 'south';
 
+      final nowDate = DateTime.now();
+      final ticketDate = _formatDate(nowDate);
+      final ticketTime = _formatTime12(nowDate);
+      final originPlace = FareTable.extractPlaceName(qrData.origin);
+      final destPlace = FareTable.extractPlaceName(qrData.destination);
+      final ticketDistance = _calculateDistance(originPlace, destPlace);
+
       final ticketData = {
         'bookingId': qrData.bookingId,
         'transactionId': qrData.transactionId,
-        'timestamp': DateTime.now().toString(),
+        'timestamp': nowDate.toIso8601String(),
+        'date': ticketDate,
+        'time': ticketTime,
         'busNumber': qrData.assignedBusNumber,
-        'from': qrData.origin,
-        'to': qrData.destination,
+        'from': originPlace,
+        'to': destPlace,
         'route': ticketRouteValue,
         'driverName': widget.driverName,
         'conductorName': widget.conductorName,
         'passengerName': qrData.passengerName,
         'numberOfPassengers': qrData.numberOfPassengers,
+        'quantity': qrData.numberOfPassengers.toString(),
         'passengerType': passengerType,
+        'distance': ticketDistance,
         'originalFare': originalFare.toStringAsFixed(2),
         'discountAmount': discountAmount.toStringAsFixed(2),
         'finalFare': finalFare.toStringAsFixed(2),
+        'payment': 'CASH',
         'ticketTitle': 'BOOKING TICKET',
       };
 
@@ -170,21 +213,23 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       // Step 9: Save scanned ticket to local storage (persistent historical record)
       await LocalStorage.saveScannedTicket(scannedTicket.toMap());
 
-      // Step 10: Create booking record for Firebase sync (trip-scoped, deleted per trip)
+      // Step 10: Create a single booking record for Firebase sync (POS will split for internal right-side calculations)
       final booking = Booking(
         id: qrData.bookingId,
         passengerName: qrData.passengerName,
         route: widget.routeDirection == 'north_to_south'
             ? 'North → South'
             : 'South → North',
-        date: DateTime.now().toString().split(' ')[0], // YYYY-MM-DD
+        date: DateTime.now().toString().split(' ')[0],
         time:
             '${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}',
         passengers: qrData.numberOfPassengers,
         fromLocation: qrData.origin,
         toLocation: qrData.destination,
         passengerUid: qrData.userId,
-        passengerType: passengerType,
+        passengerType:
+            passengerTypes.isNotEmpty ? passengerTypes.first : passengerType,
+        passengerTypes: passengerTypes,
         amount: finalFare,
         status: 'on-board',
       );
@@ -201,6 +246,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         'toLocation': booking.toLocation,
         'passengerUid': booking.passengerUid,
         'passengerType': booking.passengerType,
+        'passengerTypes': booking.passengerTypes,
         'amount': booking.amount,
         'status': booking.status,
         'tripId': LocalStorage.getCurrentTripId(),

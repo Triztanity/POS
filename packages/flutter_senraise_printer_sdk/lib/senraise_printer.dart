@@ -86,11 +86,11 @@ class SenraisePrinter {
         .printTableText(text, weight, alignment);
   }
 
-
   // -----------------------------------------------------
   // ✔ CUSTOM RECEIPT PRINTING FUNCTION (READY TO USE)
   // -----------------------------------------------------
   Future<void> printReceipt({
+    required String title,
     required String vehicleNo,
     required String date,
     required String time,
@@ -98,49 +98,65 @@ class SenraisePrinter {
     required String to,
     required String distance,
     required String passengerType,
+    required String route,
     required String driverName,
     required String conductorName,
     required String payment,
+    required String quantity,
     required String amount,
-    String route = 'Unknown',
+    String originalFare = '0.00',
+    String discountAmount = '0.00',
   }) async {
+    // Title and subtitle
     await setAlignment(1);
     await setTextBold(true);
     await setTextSize(30);
-    await printText("WALK-IN TICKET\n");
-    await nextLine(1);
+    await printText('$title\n');
+    await nextLine(0);
 
-    await setTextBold(false);
     await setTextSize(22);
+    await setTextBold(false);
+    await printText('$passengerType / $route\n');
+    await nextLine(0);
+
+    // Content block
     await setAlignment(0);
+    await setTextSize(22);
+    await setTextBold(false);
 
-    await printText("Vehicle No : $vehicleNo\n");
-    await printText("Date       : $date\n");
-    await printText("Time       : $time\n");
-    await printText("Route      : $route\n");
-    await printText("From       : $from\n");
-    await printText("To         : $to\n");
-    await printText("Distance   : $distance km\n");
-    await printText("Passenger  : $passengerType\n");
-    await printText("Driver     : $driverName\n");
-    await printText("Conductor  : $conductorName\n");
-    await printText("Payment    : $payment\n");
+    await printText('Vehicle No : $vehicleNo\n');
+    await printText('Date       : $date\n');
+    await printText('Time       : $time\n');
+    await printText('From       : $from\n');
+    await printText('To         : $to\n');
+    await printText('Distance   : $distance km\n');
+    await printText('Passenger  : $passengerType\n');
+    await printText('Driver     : $driverName\n');
+    await printText('Conductor  : $conductorName\n');
+    await printText('Payment    : $payment\n');
+    await printText('Quantity   : $quantity\n');
 
-    // Emphasized centered amount (pesos sign + amount), larger and bold
-    await nextLine(1);
+    // Discount equation section when applicable
+    final discountValue = double.tryParse(discountAmount) ?? 0.0;
+    if (discountValue > 0) {
+      await printText('Discount: ₱$originalFare - ₱$discountAmount\n');
+      await nextLine(0);
+    }
+
+    // Big total amount
+    await nextLine(0);
     await setAlignment(1);
     await setTextBold(true);
-    await setTextSize(36);
+    await setTextSize(42);
     await printText('₱$amount\n');
     await setTextSize(22);
     await setTextBold(false);
     await nextLine(1);
 
     await setAlignment(1);
-    await printText("------------------------------\n");
-    await printText("   THANK YOU & SAFE JOURNEY    \n");
-    await printText("------------------------------\n");
-
+    await printText('------------------------------\n');
+    await printText('   THANK YOU & SAFE JOURNEY   \n');
+    await printText('------------------------------\n');
     await nextLine(3);
   }
 }

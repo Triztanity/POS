@@ -13,7 +13,8 @@ class Booking {
   final int passengers;
   final String fromLocation;
   final String toLocation;
-  final String passengerType; // REGULAR, STUDENT, SENIOR, PWD, BAGGAGE
+  final String passengerType; // REGULAR, STUDENT, SENIOR, PWD, CHILD
+  final List<String>? passengerTypes; // per-seat type split (optional)
   final double amount;
   late String status; // 'on-board' or 'dropped-off'
   String? dropoffTimestamp;
@@ -29,6 +30,7 @@ class Booking {
     required this.toLocation,
     this.passengerUid,
     this.passengerType = 'REGULAR',
+    this.passengerTypes,
     this.amount = 0.0,
     this.status = 'on-board',
     this.dropoffTimestamp,
@@ -46,6 +48,7 @@ class Booking {
       'fromLocation': fromLocation,
       'toLocation': toLocation,
       'passengerType': passengerType,
+      'passengerTypes': passengerTypes,
       'amount': amount,
       'status': status,
       'dropoffTimestamp': dropoffTimestamp,
@@ -70,12 +73,69 @@ class Booking {
       fromLocation: m['fromLocation']?.toString() ?? '',
       toLocation: m['toLocation']?.toString() ?? '',
       passengerType: m['passengerType']?.toString() ?? 'REGULAR',
+      passengerTypes: (m['passengerTypes'] is List)
+          ? (m['passengerTypes'] as List).map((e) => e.toString()).toList()
+          : null,
       amount: (m['amount'] is num)
           ? (m['amount'] as num).toDouble()
           : double.tryParse(m['amount']?.toString() ?? '0') ?? 0.0,
       status: m['status']?.toString() ?? 'on-board',
       dropoffTimestamp: m['dropoffTimestamp']?.toString(),
     );
+  }
+
+  /// Expand a potentially bulk booking into individual seat bookings.
+  ///
+  /// If `passengerTypes` is present and length equals `passengers`, use each type.
+  /// Otherwise, split into equal-type entries using `passengerType`.
+  List<Booking> expandToIndividualPassengers() {
+    if (passengers <= 1) {
+      return [this];
+    }
+
+    final normalizedTypes = passengerTypes ?? [];
+    final splitCount = passengers;
+
+    if (normalizedTypes.length == splitCount) {
+      return List.generate(splitCount, (index) {
+        return Booking(
+          id: '$id-${index + 1}',
+          passengerName: passengerName,
+          passengerUid: passengerUid,
+          route: route,
+          date: date,
+          time: time,
+          passengers: 1,
+          fromLocation: fromLocation,
+          toLocation: toLocation,
+          passengerType: normalizedTypes[index],
+          passengerTypes: [normalizedTypes[index]],
+          amount: amount / splitCount,
+          status: status,
+          dropoffTimestamp: dropoffTimestamp,
+        );
+      });
+    }
+
+    // Fallback: replicate same passengerType for every seat.
+    return List.generate(splitCount, (index) {
+      return Booking(
+        id: '$id-${index + 1}',
+        passengerName: passengerName,
+        passengerUid: passengerUid,
+        route: route,
+        date: date,
+        time: time,
+        passengers: 1,
+        fromLocation: fromLocation,
+        toLocation: toLocation,
+        passengerType: passengerType,
+        passengerTypes: [passengerType],
+        amount: amount / splitCount,
+        status: status,
+        dropoffTimestamp: dropoffTimestamp,
+      );
+    });
   }
 }
 

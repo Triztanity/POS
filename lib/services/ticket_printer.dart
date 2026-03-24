@@ -5,100 +5,96 @@ import 'package:senraise_printer/senraise_printer.dart';
 class TicketPrinter {
   final SenraisePrinter _printer = SenraisePrinter();
 
-  /// Print ticket using ticketData map with all required fields
-  /// Expected keys:
-  /// bookingId, transactionId, timestamp, busNumber, from, to, route,
-  /// driverName, conductorName, passengerName, numberOfPassengers, passengerType,
-  /// originalFare, discountAmount, finalFare
+  String _singleLine(String? s) {
+    if (s == null) return '';
+    return s.replaceAll(RegExp(r"\s+"), ' ').trim();
+  }
+
+  String _formatTimestamp(dynamic ts) {
+    if (ts == null) return 'N/A';
+    DateTime dt;
+    if (ts is DateTime) {
+      dt = ts;
+    } else {
+      final s = ts.toString();
+      final epoch = int.tryParse(s);
+      if (epoch != null) {
+        dt = DateTime.fromMillisecondsSinceEpoch(epoch);
+      } else {
+        try {
+          dt = DateTime.parse(s);
+        } catch (_) {
+          return _singleLine(s);
+        }
+      }
+    }
+
+    const wk = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final weekday =
+        (dt.weekday >= 1 && dt.weekday <= 7) ? wk[dt.weekday - 1] : '';
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    return '$weekday $y-$m-$d $hh:$mm';
+  }
+
   Future<void> printTicket(Map<String, dynamic> ticketData) async {
     try {
-      String singleLine(String? s) {
-        if (s == null) return '';
-        return s.replaceAll(RegExp(r"\s+"), ' ').trim();
-      }
+      final title = ticketData['ticketTitle']?.toString() ?? 'BOARDING TICKET';
+      final passengerType =
+          _singleLine(ticketData['passengerType']?.toString() ?? 'REGULAR');
+      final route = _singleLine(ticketData['route']?.toString() ?? 'N/A');
+      final vehicleNo =
+          _singleLine(ticketData['busNumber']?.toString() ?? 'N/A');
+      final date = ticketData['date']?.toString() ??
+          _formatTimestamp(ticketData['timestamp'])
+              .split(' ')
+              .sublist(0, 2)
+              .join(' ');
+      final time = ticketData['time']?.toString() ??
+          _formatTimestamp(ticketData['timestamp']).split(' ').last;
+      var from = _singleLine(ticketData['from']?.toString() ?? 'N/A');
+      var to = _singleLine(ticketData['to']?.toString() ?? 'N/A');
+      if (from.contains('|')) from = from.split('|').last.trim();
+      if (to.contains('|')) to = to.split('|').last.trim();
+      final distance = ticketData['distance']?.toString() ?? '0';
+      final quantity = ticketData['quantity']?.toString() ??
+          ticketData['numberOfPassengers']?.toString() ??
+          '1';
+      final driver = _singleLine(ticketData['driverName']?.toString() ?? 'N/A');
+      final conductor =
+          _singleLine(ticketData['conductorName']?.toString() ?? 'N/A');
+      final payment = _singleLine(ticketData['payment']?.toString() ?? 'CASH');
+      final originalFare =
+          _singleLine(ticketData['originalFare']?.toString() ?? '0.00');
+      final discountAmount =
+          _singleLine(ticketData['discountAmount']?.toString() ?? '0.00');
+      final finalFare =
+          _singleLine(ticketData['finalFare']?.toString() ?? originalFare);
 
-      String formatTimestamp(dynamic ts) {
-        if (ts == null) return 'N/A';
-        if (ts is DateTime) {
-          final y = ts.year.toString().padLeft(4, '0');
-          final m = ts.month.toString().padLeft(2, '0');
-          final d = ts.day.toString().padLeft(2, '0');
-          final hh = ts.hour.toString().padLeft(2, '0');
-          final mm = ts.minute.toString().padLeft(2, '0');
-          return '$y-$m-$d $hh:$mm';
-        }
-        final s = ts.toString();
-        try {
-          final dt = DateTime.parse(s);
-          final y = dt.year.toString().padLeft(4, '0');
-          final m = dt.month.toString().padLeft(2, '0');
-          final d = dt.day.toString().padLeft(2, '0');
-          final hh = dt.hour.toString().padLeft(2, '0');
-          final mm = dt.minute.toString().padLeft(2, '0');
-          return '$y-$m-$d $hh:$mm';
-        } catch (_) {
-          final epoch = int.tryParse(s);
-          if (epoch != null) {
-            final dt = DateTime.fromMillisecondsSinceEpoch(epoch);
-            final y = dt.year.toString().padLeft(4, '0');
-            final m = dt.month.toString().padLeft(2, '0');
-            final d = dt.day.toString().padLeft(2, '0');
-            final hh = dt.hour.toString().padLeft(2, '0');
-            final mm = dt.minute.toString().padLeft(2, '0');
-            return '$y-$m-$d $hh:$mm';
-          }
-          final m = RegExp(r"(\d{4}-\d{2}-\d{2}).*?(\d{2}:\d{2})").firstMatch(s);
-          if (m != null) return '${m.group(1)} ${m.group(2)}';
-          return singleLine(s);
-        }
-      }
-
-      await _printer.setAlignment(1);
-      await _printer.setTextBold(true);
-      await _printer.setTextSize(24);
-      final title = (ticketData['ticketTitle']?.toString() ?? 'BOARDING TICKET');
-      await _printer.printText('$title\n');
-
-      await _printer.setTextBold(false);
-      await _printer.setTextSize(20);
-      await _printer.nextLine(1);
-
-      await _printer.setAlignment(0);
-
-      // Header
-      await _printer.printText('Booking ID : ${singleLine(ticketData['bookingId']?.toString() ?? 'N/A')}\n');
-      await _printer.printText('Transaction : ${singleLine(ticketData['transactionId']?.toString() ?? 'N/A')}\n');
-      await _printer.printText('Timestamp   : ${formatTimestamp(ticketData['timestamp'])}\n');
-
-      // Bus & route
-      await _printer.printText('Bus No.     : ${singleLine(ticketData['busNumber']?.toString() ?? 'N/A')}\n');
-      await _printer.printText('Route       : ${singleLine(ticketData['route']?.toString() ?? 'N/A')}\n');
-      await _printer.printText('From        : ${singleLine(ticketData['from']?.toString() ?? 'N/A')}\n');
-      await _printer.printText('To          : ${singleLine(ticketData['to']?.toString() ?? 'N/A')}\n');
-
-      // Crew
-      await _printer.printText('Driver      : ${singleLine(ticketData['driverName']?.toString() ?? 'N/A')}\n');
-      await _printer.printText('Conductor   : ${singleLine(ticketData['conductorName']?.toString() ?? 'N/A')}\n');
-
-      // Passenger
-      await _printer.printText('Passenger   : ${singleLine(ticketData['passengerName']?.toString() ?? 'N/A')}\n');
-      await _printer.printText('Pax Count   : ${singleLine(ticketData['numberOfPassengers']?.toString() ?? '1')}\n');
-      await _printer.printText('Type        : ${singleLine(ticketData['passengerType']?.toString() ?? 'REGULAR')}\n');
-
-      // Fare
-      await _printer.printText('Original    : ₱${singleLine(ticketData['originalFare']?.toString() ?? '0.00')}\n');
-      final discountAmountStr = ticketData['discountAmount']?.toString() ?? '0';
-      final discountAmount = double.tryParse(discountAmountStr) ?? 0.0;
-      if (discountAmount > 0) {
-        await _printer.printText('Discount    : -₱${singleLine(ticketData['discountAmount']?.toString() ?? '0.00')}\n');
-      }
-      await _printer.printText('Final Fare  : ₱${singleLine(ticketData['finalFare']?.toString() ?? '0.00')}\n');
-
-      await _printer.setAlignment(1);
-      await _printer.printText('Thank you for boarding!\n');
-      await _printer.nextLine(3);
-    } catch (e) {
+      await _printer.printReceipt(
+        title: title,
+        vehicleNo: vehicleNo,
+        date: date,
+        time: time,
+        from: from,
+        to: to,
+        distance: distance,
+        passengerType: passengerType,
+        route: route,
+        driverName: driver,
+        conductorName: conductor,
+        payment: payment,
+        quantity: quantity,
+        amount: finalFare,
+        originalFare: originalFare,
+        discountAmount: discountAmount,
+      );
+    } on Exception catch (e) {
       debugPrint('Ticket printing error: $e');
       rethrow;
-    }  }
+    }
+  }
 }

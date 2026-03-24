@@ -37,6 +37,28 @@ class _BookingsScreenState extends State<BookingsScreen> {
     final bookingPassengers =
         bookings.where((b) => b.passengerUid != null).toList();
 
+    // Sort with on-board first so drop-off candidates appear at top.
+    // For dropped-off passengers, show newest drop-offs first.
+    bookingPassengers.sort((a, b) {
+      final aOnBoard = a.status == 'on-board' ? 0 : 1;
+      final bOnBoard = b.status == 'on-board' ? 0 : 1;
+      if (aOnBoard != bOnBoard) return aOnBoard.compareTo(bOnBoard);
+
+      if (a.status == 'dropped-off' && b.status == 'dropped-off') {
+        final aTs = DateTime.tryParse(a.dropoffTimestamp ?? '')
+                ?.millisecondsSinceEpoch ??
+            0;
+        final bTs = DateTime.tryParse(b.dropoffTimestamp ?? '')
+                ?.millisecondsSinceEpoch ??
+            0;
+        if (aTs != bTs) return bTs.compareTo(aTs);
+      }
+
+      return a.passengerName
+          .toLowerCase()
+          .compareTo(b.passengerName.toLowerCase());
+    });
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -367,13 +389,12 @@ class _BookingsScreenState extends State<BookingsScreen> {
           await Dialogs.showMessage(
               context, 'Success', 'Drop-off status updated in Firebase.');
         } else {
-          booking.status = previousStatus;
-          booking.dropoffTimestamp = previousDropoffTimestamp;
-          _bookingManager.updateBooking(booking);
+          // Keep drop-off locally and treat as pending/offline update.
+          // This prevents re-scan and lets outbox sync do the update once gateway picks it up.
           await Dialogs.showMessage(
             context,
             'Pending',
-            'Drop-off was not confirmed in Firebase yet. Status was not locked.\n\n${result['message'] ?? 'Please retry once online.'}',
+            'Drop-off status queued for offline sync. POS will retry automatically.\n\n${result['message'] ?? 'Please keep the device online periodically for sync.'}',
           );
         }
         setState(() {});

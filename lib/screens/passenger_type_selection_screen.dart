@@ -19,16 +19,24 @@ class PassengerTypeSelectionScreen extends StatefulWidget {
   });
 
   @override
-  State<PassengerTypeSelectionScreen> createState() => _PassengerTypeSelectionScreenState();
+  State<PassengerTypeSelectionScreen> createState() =>
+      _PassengerTypeSelectionScreenState();
 }
 
-class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScreen> {
+class _PassengerTypeSelectionScreenState
+    extends State<PassengerTypeSelectionScreen> {
   late String selectedPassengerType;
   late double originalFare;
   late double discountAmount;
   late double finalFare;
 
-  final List<String> passengerTypes = ['REGULAR', 'STUDENT', 'SENIOR', 'PWD', 'OTHER'];
+  final List<String> passengerTypes = [
+    'REGULAR',
+    'STUDENT',
+    'SENIOR',
+    'PWD',
+    'CHILD'
+  ];
 
   @override
   void initState() {
@@ -41,11 +49,17 @@ class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScr
   void _updateFare() {
     // Calculate actual fare based on origin, destination, and passenger type
     final calculatedFare = FareCalculator.calculateFare(
-      origin: widget.qrData.origin.replaceAll(RegExp(r'^\d+\.\s*'), '').trim().toUpperCase(),
-      destination: widget.qrData.destination.replaceAll(RegExp(r'^\d+\.\s*'), '').trim().toUpperCase(),
+      origin: widget.qrData.origin
+          .replaceAll(RegExp(r'^\d+\.\s*'), '')
+          .trim()
+          .toUpperCase(),
+      destination: widget.qrData.destination
+          .replaceAll(RegExp(r'^\d+\.\s*'), '')
+          .trim()
+          .toUpperCase(),
       passengerType: selectedPassengerType,
     );
-    
+
     finalFare = calculatedFare.toDouble();
     discountAmount = originalFare - finalFare;
   }
@@ -89,7 +103,10 @@ class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScr
                     children: [
                       Text(
                         'Booking Information',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green[700]),
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green[700]),
                       ),
                       const SizedBox(height: 8),
                       _buildInfoRow('Passenger:', widget.qrData.passengerName),
@@ -97,7 +114,8 @@ class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScr
                       _buildInfoRow('Booking ID:', widget.qrData.bookingId),
                       _buildInfoRow('From:', widget.qrData.origin),
                       _buildInfoRow('To:', widget.qrData.destination),
-                      _buildInfoRow('Passengers:', '${widget.qrData.numberOfPassengers}'),
+                      _buildInfoRow(
+                          'Passengers:', '${widget.qrData.numberOfPassengers}'),
                     ],
                   ),
                 ),
@@ -156,16 +174,24 @@ class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScr
                     children: [
                       Text(
                         'Fare Breakdown',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue[700]),
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[700]),
                       ),
                       const SizedBox(height: 12),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Original Fare:', style: TextStyle(fontSize: 13, color: Colors.grey[700])),
+                          Text('Original Fare:',
+                              style: TextStyle(
+                                  fontSize: 13, color: Colors.grey[700])),
                           Text(
                             '₱${originalFare.toStringAsFixed(2)}',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black87),
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87),
                           ),
                         ],
                       ),
@@ -174,10 +200,15 @@ class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScr
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Discount/Change:', style: TextStyle(fontSize: 13, color: Colors.red[600])),
+                            Text('Discount/Change:',
+                                style: TextStyle(
+                                    fontSize: 13, color: Colors.red[600])),
                             Text(
                               '-₱${discountAmount.toStringAsFixed(2)}',
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.red[600]),
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.red[600]),
                             ),
                           ],
                         ),
@@ -188,10 +219,15 @@ class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScr
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Additional Charge:', style: TextStyle(fontSize: 13, color: Colors.orange[600])),
+                            Text('Additional Charge:',
+                                style: TextStyle(
+                                    fontSize: 13, color: Colors.orange[600])),
                             Text(
                               '+₱${(-discountAmount).toStringAsFixed(2)}',
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.orange[600]),
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.orange[600]),
                             ),
                           ],
                         ),
@@ -202,7 +238,11 @@ class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScr
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Final Fare:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+                          Text('Final Fare:',
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87)),
                           Text(
                             '₱${finalFare.toStringAsFixed(2)}',
                             style: TextStyle(
@@ -234,7 +274,8 @@ class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScr
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green[700],
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                     child: const Text(
                       'CONFIRM & PRINT TICKET',
@@ -257,7 +298,8 @@ class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScr
                     onPressed: () => Navigator.pop(context),
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: Colors.red[300]!),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                     child: Text(
                       'CANCEL',
@@ -284,7 +326,11 @@ class _PassengerTypeSelectionScreenState extends State<PassengerTypeSelectionScr
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87)),
+          Text(value,
+              style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87)),
         ],
       ),
     );

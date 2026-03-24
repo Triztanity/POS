@@ -434,10 +434,9 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<String> passengerTypes = [
     'REGULAR',
     'STUDENT',
-    'BAGGAGE',
-    'CHILD',
     'SENIOR',
     'PWD',
+    'CHILD',
   ];
 
   /// Get valid "From" stops based on route direction
@@ -1136,7 +1135,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<bool> _promptForDriverTap() async {
     // Reset debounce cache to allow immediate rescans
     NFCReaderModeService.instance.resetDebounce();
-    
+
     // Ensure reader mode is active
     try {
       await NFCReaderModeService.instance.start();
@@ -1171,8 +1170,7 @@ class _HomeScreenState extends State<HomeScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: const [
-              Text(
-                  'Please tap your Driver ID card to continue scanning.'),
+              Text('Please tap your Driver ID card to continue scanning.'),
               SizedBox(height: 12),
               CircularProgressIndicator(),
             ],
@@ -1297,10 +1295,21 @@ class _HomeScreenState extends State<HomeScreen> {
             return;
           }
           final now = DateTime.now();
+          final weekday = [
+            'Mon',
+            'Tue',
+            'Wed',
+            'Thu',
+            'Fri',
+            'Sat',
+            'Sun'
+          ][now.weekday - 1];
           final date =
-              "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-          final time =
-              "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+              "$weekday ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+          final period = now.hour >= 12 ? 'PM' : 'AM';
+          final hour12 = ((now.hour + 11) % 12 + 1).toString().padLeft(2, '0');
+          final minute = now.minute.toString().padLeft(2, '0');
+          final time = '$hour12:$minute $period';
 
           final totalAmount = (fare * quantity).toStringAsFixed(2);
 
@@ -1350,6 +1359,7 @@ class _HomeScreenState extends State<HomeScreen> {
           debugPrint('[RECEIPT] From: $originPlace, To: $destPlace');
 
           await printer.printReceipt(
+            title: 'WALK-IN TICKET',
             vehicleNo: _assignedBus ?? 'BUS-001',
             date: date,
             time: time,
@@ -1357,11 +1367,14 @@ class _HomeScreenState extends State<HomeScreen> {
             to: destPlace,
             distance: distance,
             passengerType: passengerType!,
+            route: routeDisplay,
             driverName: driverName,
             conductorName: conductorName,
             payment: "CASH",
+            quantity: quantity.toString(),
             amount: totalAmount,
-            route: routeDisplay,
+            originalFare: totalAmount,
+            discountAmount: '0.00',
           );
 
           // Create walk-in record and persist to dedicated walkins storage
@@ -1567,6 +1580,4 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
-
-
 }

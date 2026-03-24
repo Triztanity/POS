@@ -27,6 +27,9 @@ class BookingConfirmationScreen extends StatefulWidget {
 
 class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
   String? selectedPassengerType;
+  late int passengerCount;
+  late List<String> selectedPassengerTypes;
+  late List<double> perSeatFares;
   late double originalFare;
   double discountAmount = 0;
   double finalFare = 0;
@@ -36,7 +39,7 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
     'STUDENT',
     'SENIOR',
     'PWD',
-    'OTHER'
+    'CHILD'
   ];
 
   @override
@@ -44,15 +47,17 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
     super.initState();
     originalFare = widget.qrData.fareAmount;
     finalFare = originalFare;
+
+    passengerCount = widget.qrData.numberOfPassengers > 0
+        ? widget.qrData.numberOfPassengers
+        : 1;
+    selectedPassengerTypes = List.filled(passengerCount, 'REGULAR');
+    selectedPassengerType = selectedPassengerTypes.first;
+    perSeatFares = List.filled(passengerCount, 0.0);
+    _updateFare();
   }
 
   void _updateFare() {
-    if (selectedPassengerType == null) return;
-    final normalizedPassengerType = selectedPassengerType!.trim().toUpperCase();
-    final passengerCount = widget.qrData.numberOfPassengers > 0
-        ? widget.qrData.numberOfPassengers
-        : 1;
-    final qrFareRaw = widget.qrData.fareAmount;
     final normalizedOrigin = widget.qrData.origin
         .replaceAll(RegExp(r'^\d+\.\s*'), '')
         .trim()
@@ -62,7 +67,40 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
         .trim()
         .toUpperCase();
 
-    // Always compute a regular baseline first so selecting REGULAR never applies discounts.
+    if (passengerCount > 1) {
+      final qrFareRaw = widget.qrData.fareAmount;
+      final regularSeatFareFromQr = (qrFareRaw > 0)
+          ? (qrFareRaw / passengerCount)
+          : BookingFareCalculator.calculateFare(
+              origin: normalizedOrigin,
+              destination: normalizedDestination,
+              passengerType: 'REGULAR',
+              quantity: 1,
+            ).toDouble();
+
+      perSeatFares = selectedPassengerTypes.map((type) {
+        final normalized = type.trim().toUpperCase();
+        return BookingFareCalculator.calculateFare(
+          origin: normalizedOrigin,
+          destination: normalizedDestination,
+          passengerType: normalized,
+          quantity: 1,
+        ).toDouble();
+      }).toList();
+
+      finalFare = perSeatFares.fold(0.0, (sum, f) => sum + f);
+      originalFare =
+          (qrFareRaw > 0) ? qrFareRaw : regularSeatFareFromQr * passengerCount;
+      final regularTotal = regularSeatFareFromQr * passengerCount;
+      discountAmount = (regularTotal - finalFare).clamp(0.0, double.infinity);
+      selectedPassengerType = selectedPassengerTypes.first;
+      return;
+    }
+
+    if (selectedPassengerType == null) return;
+    final normalizedPassengerType = selectedPassengerType!.trim().toUpperCase();
+    final qrFareRaw = widget.qrData.fareAmount;
+
     final regularFare = BookingFareCalculator.calculateFare(
       origin: normalizedOrigin,
       destination: normalizedDestination,
@@ -77,18 +115,12 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
       quantity: passengerCount,
     ).toDouble();
 
-    // Keep QR fare as the booking's original amount whenever available.
-    // This prevents the displayed "Original Fare" from changing (e.g., 64 -> 50)
-    // when passenger type is selected.
     final baselineRegularFare = qrFareRaw > 0 ? qrFareRaw : regularFare;
-
-    // Resolve a fare table row from the baseline's per-seat value when possible.
     final perSeatBaseline = passengerCount > 0
         ? (baselineRegularFare / passengerCount)
         : baselineRegularFare;
     final baselineEntry = FareTable.getEntryByFare(perSeatBaseline);
 
-    // Regular must never be discounted.
     if (normalizedPassengerType == 'REGULAR') {
       originalFare = baselineRegularFare > 0 ? baselineRegularFare : qrFareRaw;
       finalFare = originalFare;
@@ -103,7 +135,6 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
       return;
     }
 
-    // For discounted types, compute from the baseline amount and never exceed regular.
     double computedDiscountedFare = 0;
     if (baselineEntry != null) {
       computedDiscountedFare =
@@ -112,7 +143,6 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
       final discountRatio = (selectedFare / regularFare).clamp(0.0, 1.0);
       computedDiscountedFare = baselineRegularFare * discountRatio;
     } else {
-      // Conservative fallback: 20% discount for non-regular when no fare row is found.
       computedDiscountedFare = baselineRegularFare * 0.80;
     }
 
@@ -193,38 +223,97 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: screenW * 0.02),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: selectedPassengerType == null
-                          ? Colors.red
-                          : Colors.black54,
+                if (passengerCount > 1) ...[
+                  Text(
+                    'Assign type for each seat',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                  ),
+                  const SizedBox(height: 6),
+                  Column(
+                    children: List.generate(passengerCount, (index) {
+                      return Padding(
+                        padding: EdgeInsets.only(bottom: screenH * 0.01),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: screenW * 0.12,
+                              child: Text(
+                                '#${index + 1}',
+                                style: TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                            Expanded(
+                              child: Container(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: Colors.black45),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: DropdownButton<String>(
+                                  isExpanded: true,
+                                  underline: const SizedBox(),
+                                  value: selectedPassengerTypes[index],
+                                  items: passengerTypes
+                                      .map((type) => DropdownMenuItem(
+                                            value: type,
+                                            child: Text(type),
+                                          ))
+                                      .toList(),
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      setState(() {
+                                        selectedPassengerTypes[index] = value;
+                                        selectedPassengerType =
+                                            selectedPassengerTypes.first;
+                                        _updateFare();
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: screenW * 0.02),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: selectedPassengerType == null
+                            ? Colors.red
+                            : Colors.black54,
+                      ),
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    borderRadius: BorderRadius.circular(6),
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      underline: const SizedBox(),
+                      value: selectedPassengerType,
+                      hint: const Text('Select Type',
+                          style: TextStyle(color: Colors.grey)),
+                      items: passengerTypes
+                          .map((type) => DropdownMenuItem(
+                                value: type,
+                                child: Text(type),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            selectedPassengerType = value;
+                            selectedPassengerTypes = [value];
+                            _updateFare();
+                          });
+                        }
+                      },
+                    ),
                   ),
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    underline: const SizedBox(),
-                    value: selectedPassengerType,
-                    hint: const Text('Select Type',
-                        style: TextStyle(color: Colors.grey)),
-                    items: passengerTypes
-                        .map((type) => DropdownMenuItem(
-                              value: type,
-                              child: Text(type),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          selectedPassengerType = value;
-                          _updateFare();
-                        });
-                      }
-                    },
-                  ),
-                ),
+                ],
 
                 SizedBox(height: screenH * 0.02),
 
@@ -354,6 +443,8 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                             }
                             Navigator.pop(context, {
                               'passengerType': selectedPassengerType!,
+                              'passengerTypes': selectedPassengerTypes,
+                              'perSeatFares': perSeatFares,
                               'originalFare': originalFare,
                               'discountAmount': discountAmount,
                               'finalFare': finalFare,
