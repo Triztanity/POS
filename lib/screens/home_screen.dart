@@ -429,6 +429,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String? _assignedBus;
 
+  bool get _isSessionLockedToRecordsOnly =>
+      AppState.instance.tripCancelledLocked;
+
+  Future<void> _showLockedModeMessage() async {
+    if (!mounted) return;
+    await Dialogs.showMessage(
+      context,
+      'Trip Locked',
+      'Trip has been cancelled for this session. Only Menu > Records > Arrival Report is allowed.',
+    );
+  }
+
   String? passengerType;
 
   final List<String> passengerTypes = [
@@ -499,6 +511,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final mq = MediaQuery.of(context);
     final screenH = mq.size.height;
     final screenW = mq.size.width;
+    final isLocked = _isSessionLockedToRecordsOnly;
 
     final double vpadSmall = screenH * 0.006;
     final double vpad = screenH * 0.012;
@@ -515,6 +528,27 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildHeader(screenW, headerHeight),
               SizedBox(height: vpadSmall),
+              if (isLocked)
+                Container(
+                  width: double.infinity,
+                  margin: EdgeInsets.only(bottom: vpadSmall),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade300),
+                  ),
+                  child: Text(
+                    'Trip cancelled: operational features are locked. Use Menu > Records > Arrival Report only.',
+                    style: TextStyle(
+                      color: Colors.red.shade800,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -523,6 +557,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       label: "FROM",
                       value: fromLocation,
                       options: getValidFromStops(),
+                      enabled: !isLocked,
                       onChanged: (v) => setState(() {
                         fromLocation = v;
                         // Always reset "To" to the first valid destination
@@ -535,6 +570,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       label: "TO",
                       value: toLocation,
                       options: getValidToStops(),
+                      enabled: !isLocked,
                       onChanged: (v) => setState(() => toLocation = v),
                     ),
                     SizedBox(height: vpad + vpadSmall),
@@ -590,20 +626,28 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ListTile(
             title: const Text("PROFILE"),
-            onTap: () {
+            onTap: () async {
               Navigator.pop(context);
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => ProfileScreen(
-                          routeInfo: getRouteDisplay(),
-                          conductor: widget.conductor)));
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ProfileScreen(
+                    routeInfo: getRouteDisplay(),
+                    conductor: widget.conductor,
+                  ),
+                ),
+              );
+              if (mounted) setState(() {});
             },
           ),
           ListTile(
             title: const Text("BOOKINGS"),
-            onTap: () {
+            onTap: () async {
               Navigator.pop(context);
+              if (_isSessionLockedToRecordsOnly) {
+                await _showLockedModeMessage();
+                return;
+              }
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -614,8 +658,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           ListTile(
             title: const Text("PASSENGERS"),
-            onTap: () {
+            onTap: () async {
               Navigator.pop(context);
+              if (_isSessionLockedToRecordsOnly) {
+                await _showLockedModeMessage();
+                return;
+              }
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -743,7 +791,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               TextButton(
-                onPressed: () {
+                onPressed: () async {
+                  if (_isSessionLockedToRecordsOnly) {
+                    await _showLockedModeMessage();
+                    return;
+                  }
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -866,6 +918,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Passenger Type UI
   Widget _buildPassengerTypeSelector(double screenW) {
+    final isLocked = _isSessionLockedToRecordsOnly;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -876,7 +929,9 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             border: Border.all(
-              color: passengerType == null ? Colors.red : Colors.black54,
+              color: isLocked
+                  ? Colors.grey
+                  : (passengerType == null ? Colors.red : Colors.black54),
             ),
             borderRadius: BorderRadius.circular(6),
           ),
@@ -889,7 +944,9 @@ class _HomeScreenState extends State<HomeScreen> {
             items: passengerTypes
                 .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                 .toList(),
-            onChanged: (value) => setState(() => passengerType = value!),
+            onChanged: isLocked
+                ? null
+                : (value) => setState(() => passengerType = value!),
           ),
         ),
       ],
@@ -902,7 +959,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return SizedBox(
       height: screenH * 0.150,
       child: OutlinedButton.icon(
-        onPressed: () => _showQrPopup(context),
+        onPressed: () async {
+          if (_isSessionLockedToRecordsOnly) {
+            await _showLockedModeMessage();
+            return;
+          }
+          _showQrPopup(context);
+        },
         style: OutlinedButton.styleFrom(
           side: BorderSide(color: Colors.green.shade700),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
@@ -989,8 +1052,13 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Positioned.fill(
                   child: OutlinedButton(
-                    onPressed: () =>
-                        _showBookingsDialog(context, screenW, screenH),
+                    onPressed: () async {
+                      if (_isSessionLockedToRecordsOnly) {
+                        await _showLockedModeMessage();
+                        return;
+                      }
+                      _showBookingsDialog(context, screenW, screenH);
+                    },
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(
                           color: borderColor, width: hasIncoming ? 2 : 1.2),
@@ -1046,6 +1114,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showBookingsDialog(
       BuildContext context, double screenW, double screenH) {
+    if (_isSessionLockedToRecordsOnly) {
+      _showLockedModeMessage();
+      return;
+    }
     showDialog(
       context: context,
       builder: (_) {
@@ -1078,6 +1150,11 @@ class _HomeScreenState extends State<HomeScreen> {
       height: screenH * 0.080,
       child: ElevatedButton(
         onPressed: () async {
+          if (_isSessionLockedToRecordsOnly) {
+            await _showLockedModeMessage();
+            return;
+          }
+
           if (LocalStorage.isManualMode()) {
             showDialog(
                 context: context,
@@ -1214,6 +1291,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Quantity + Total section
   Widget _buildQuantityAndTotal(double screenW) {
+    final isLocked = _isSessionLockedToRecordsOnly;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -1239,7 +1317,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   (i) =>
                       DropdownMenuItem(value: i + 1, child: Text("${i + 1}")),
                 ),
-                onChanged: (value) => setState(() => quantity = value!),
+                onChanged: isLocked
+                    ? null
+                    : (value) => setState(() => quantity = value!),
               ),
             ),
           ],
@@ -1266,6 +1346,11 @@ class _HomeScreenState extends State<HomeScreen> {
       height: screenH * 0.080,
       child: ElevatedButton(
         onPressed: () async {
+          if (_isSessionLockedToRecordsOnly) {
+            await _showLockedModeMessage();
+            return;
+          }
+
           if (passengerType == null) {
             showDialog(
                 context: context,
@@ -1436,6 +1521,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required String label,
     required String value,
     required List<String> options,
+    bool enabled = true,
     required Function(String) onChanged,
   }) {
     return Column(
@@ -1468,7 +1554,7 @@ class _HomeScreenState extends State<HomeScreen> {
               items: options
                   .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                   .toList(),
-              onChanged: (v) => onChanged(v!),
+              onChanged: enabled ? (v) => onChanged(v!) : null,
             );
           }),
         ),

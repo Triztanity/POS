@@ -35,6 +35,9 @@ class _RecordsScreenState extends State<RecordsScreen> {
     _loadInitialData();
     // If no driver is registered yet, prompt for driver tap when opening this screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (AppState.instance.tripCancelledLocked) {
+        return;
+      }
       final driver = AppState.instance.driver;
       if (driver == null) {
         _promptForDriverTap();

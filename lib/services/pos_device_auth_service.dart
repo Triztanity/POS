@@ -5,24 +5,25 @@ import 'device_identifier_service.dart';
 import 'device_config_service.dart';
 
 /// POS Device Authentication Service
-/// 
+///
 /// Handles device-level Firebase authentication for the POS system.
 /// Maps each physical POS device to its Firebase credentials based on Android ID.
-/// 
+///
 /// Supported Devices:
 /// - Device 1: Android ID 2590ecaf10bb2b56 (BUS-001)
 /// - Device 2: Android ID e9fb9c8908a3cb9f (BUS-002)
-/// 
+///
 /// On app startup, this service auto-detects which device is running
 /// and signs in with the appropriate credentials.
 
 class POSDeviceAuthService {
-  static final POSDeviceAuthService _instance = POSDeviceAuthService._internal();
-  
+  static final POSDeviceAuthService _instance =
+      POSDeviceAuthService._internal();
+
   factory POSDeviceAuthService() {
     return _instance;
   }
-  
+
   POSDeviceAuthService._internal();
 
   /// Device credential mapping
@@ -34,6 +35,11 @@ class POSDeviceAuthService {
       'deviceName': 'BUS-001',
     },
     'e9fb9c8908a3cb9f': {
+      'email': 'posdevice002@example.com',
+      'password': 'Test1234.',
+      'deviceName': 'BUS-002',
+    },
+    '43e20937c71bb2ad': {
       'email': 'posdevice002@example.com',
       'password': 'Test1234.',
       'deviceName': 'BUS-002',
@@ -60,7 +66,7 @@ class POSDeviceAuthService {
   /// Get the current device's Android ID
   Future<String?> getDeviceId() async {
     if (_currentDeviceId != null) return _currentDeviceId;
-    
+
     try {
       final identifiers = await DeviceIdentifierService.getDeviceIdentifiers();
       _currentDeviceId = identifiers?['androidId'];
@@ -75,10 +81,10 @@ class POSDeviceAuthService {
   /// Get the current device's registered name
   Future<String?> getDeviceName() async {
     if (_currentDeviceName != null) return _currentDeviceName;
-    
+
     final deviceId = await getDeviceId();
     if (deviceId == null) return null;
-    
+
     _currentDeviceName = _deviceCredentials[deviceId]?['deviceName'];
     return _currentDeviceName;
   }
@@ -97,7 +103,8 @@ class POSDeviceAuthService {
 
       // Fallback: use assigned bus number from DeviceConfigService
       if (credentials == null) {
-        debugPrint('⚠️ AndroidId lookup failed (id=$deviceId), trying bus-based fallback');
+        debugPrint(
+            '⚠️ AndroidId lookup failed (id=$deviceId), trying bus-based fallback');
         final assignedBus = await DeviceConfigService.getAssignedBus();
         if (assignedBus != null) {
           credentials = _busCredentials[assignedBus];
@@ -116,15 +123,16 @@ class POSDeviceAuthService {
 
       debugPrint('🔄 Signing in POS device: $deviceName');
 
-      final userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final userCredential =
+          await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
 
       _currentDeviceName = deviceName;
-      debugPrint('✅ Device signed in successfully: ${userCredential.user?.email}');
+      debugPrint(
+          '✅ Device signed in successfully: ${userCredential.user?.email}');
       return true;
-
     } on FirebaseAuthException catch (e) {
       debugPrint('❌ Firebase Auth Error [${e.code}]: ${e.message}');
       return false;

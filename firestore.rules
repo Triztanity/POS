@@ -75,6 +75,7 @@ service cloud.firestore {
     match /schedules/{tripId} {
       allow create: if request.auth != null && hasRole('dispatcher');
       allow read: if request.auth != null;
+      // POS may set cancellation signal via cancelledAt for dispatcher workflow.
       allow update: if request.auth != null && (
         hasRole('dispatcher') ||
         isPosDevice()

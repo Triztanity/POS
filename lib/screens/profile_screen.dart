@@ -4,6 +4,7 @@ import 'login_screen.dart';
 import '../local_storage.dart';
 import '../models/booking.dart';
 
+import '../services/firebase_dispatch_service.dart';
 import '../services/nfc_reader_mode_service.dart';
 import '../services/app_state.dart';
 // records_screen import removed (manual mode removed)
@@ -20,7 +21,6 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-
   Map<String, dynamic>? _driver; // populated after driver taps their card
 
   String _driverStatus = '';
@@ -36,6 +36,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final mq = MediaQuery.of(context);
     final screenH = mq.size.height;
     final screenW = mq.size.width;
+    final isLocked = AppState.instance.tripCancelledLocked;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -197,6 +198,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     // Clear ONLY conductor session to keep driver locked to schedule
                     AppState.instance.setConductor(null);
+                    AppState.instance.setTripCancelledLocked(false);
                     await LocalStorage.clearCurrentConductor();
                     await LocalStorage
                         .clearLastScreen(); // Clear navigation state on logout
@@ -223,6 +225,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   child: const Text(
                     "LOG OUT",
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Emergency cancel trip trigger (POS can request dispatcher review)
+              SizedBox(
+                width: double.infinity,
+                height: screenH * 0.065,
+                child: ElevatedButton(
+                  onPressed: isLocked ? null : _onCancelTripPressed,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isLocked ? Colors.grey : Colors.red[700],
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    isLocked ? "TRIP LOCKED" : "CANCEL TRIP",
                     style: TextStyle(color: Colors.white, fontSize: 16),
                   ),
                 ),
@@ -304,7 +326,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       } else {
         if (_driver == null) {
           setState(() {
-            _driverStatus = 'Card belongs to $role — only drivers are shown here.';
+            _driverStatus =
+                'Card belongs to $role — only drivers are shown here.';
           });
         }
       }
@@ -393,6 +416,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     await Dialogs.showMessage(
         context, 'Driver Changed', 'Driver changed to ${_driver!['name']}');
+  }
+
+  Future<void> _onCancelTripPressed() async {
+    try {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Confirm Cancel Trip'),
+          content: const Text(
+            'This will send an emergency cancellation alert to dashboard and lock this session to Menu/Records only. Continue?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('No'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Yes, Proceed'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm != true) return;
+
+      final success = await FirebaseDispatchService().sendCancelTripSignal();
+      if (!success) {
+        await Dialogs.showMessage(
+          context,
+          'Cannot cancel trip',
+          'No active trip in progress for cancellation.',
+        );
+        return;
+      }
+
+      AppState.instance.setTripCancelledLocked(true);
+
+      await Dialogs.showMessage(
+        context,
+        'Cancel Trip Alert Sent',
+        'Emergency cancellation signal recorded (cancelledAt set). This session is now locked to Menu > Records > Arrival Report only.',
+      );
+
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      await Dialogs.showMessage(
+        context,
+        'Error',
+        'Failed to send cancel trip alert: $e',
+      );
+    }
   }
 
   @override
@@ -558,5 +635,4 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final out = [...masked, visible].join(':');
     return out;
   }
-
 }

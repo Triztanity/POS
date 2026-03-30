@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import '../local_storage.dart';
 import 'pos_device_auth_service.dart';
 
 class FirebaseDispatchService {
@@ -70,6 +71,59 @@ class FirebaseDispatchService {
     } catch (e) {
       print('Error getting schedule: $e');
       return null;
+    }
+  }
+
+  /// Mark an in-progress trip as cancelled from POS (emergency alert path).
+  /// Writes only `cancelledAt` (server timestamp) on matched schedule doc.
+  /// Returns true if a schedule was updated; false if no active/eligible schedule.
+  Future<bool> sendCancelTripSignal({String? tripId}) async {
+    try {
+      final posAuth = POSDeviceAuthService();
+      final authenticated = await posAuth.ensureSignedInWithPosRole();
+      if (!authenticated) {
+        print(
+            '⚠️ POS device not authenticated to Firebase. Cannot send cancel signal.');
+        return false;
+      }
+
+      tripId ??= LocalStorage.getCurrentTripId();
+      if (tripId.isEmpty) {
+        print('⚠️ No current tripId set in local storage.');
+        return false;
+      }
+
+      final query = await _firestore
+          .collection('schedules')
+          .where('tripId', isEqualTo: tripId)
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) {
+        print('⚠️ No schedule found for tripId $tripId');
+        return false;
+      }
+
+      final doc = query.docs.first;
+      final data = doc.data();
+      final status = (data['status'] ?? '').toString().toLowerCase();
+
+      // Only send cancel signal for already started trips.
+      if (status != 'departed' && status != 'in-progress') {
+        print(
+            '⚠️ Schedule is not in-progress/departed (status=$status); skip cancel signal.');
+        return false;
+      }
+
+      await doc.reference.update({
+        'cancelledAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Cancel trip signal set for schedule tripId=$tripId');
+      return true;
+    } catch (e) {
+      print('❌ Failed to send cancel trip signal: $e');
+      return false;
     }
   }
 

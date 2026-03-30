@@ -57,6 +57,7 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
     final hasBookingScans = widget.scannedTickets.isNotEmpty;
     final ticketMode =
         hasBookingScans ? 'REGULAR TRIP WITH BOOKINGS' : 'REGULAR TRIP';
+    final isLocked = AppState.instance.tripCancelledLocked;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -142,6 +143,27 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
                       ),
                     ),
                   ),
+                  if (isLocked)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.red[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Text(
+                        'Trip cancelled lock is active. Dispatch actions are disabled; records and report printing remain available.',
+                        style: TextStyle(
+                          color: Colors.red.shade800,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   const SizedBox(height: 8),
                   // Dispatcher rectangular panel (tappable)
                   InkWell(
@@ -157,11 +179,12 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
                                   Navigator.of(context).pop('records'),
                               child: const Text('View Records'),
                             ),
-                            SimpleDialogOption(
-                              onPressed: () =>
-                                  Navigator.of(context).pop('dispatch'),
-                              child: const Text('Dispatch New Trip'),
-                            ),
+                            if (!isLocked)
+                              SimpleDialogOption(
+                                onPressed: () =>
+                                    Navigator.of(context).pop('dispatch'),
+                                child: const Text('Dispatch New Trip'),
+                              ),
                             SimpleDialogOption(
                               onPressed: () => Navigator.of(context).pop(null),
                               child: const Text('Cancel'),
@@ -182,6 +205,16 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
                                   dispatcherInfo: dispatcherInfo)),
                         );
                       } else if (choice == 'dispatch') {
+                        if (isLocked) {
+                          if (mounted) {
+                            await Dialogs.showMessage(
+                              context,
+                              'Trip Locked',
+                              'Dispatch actions are disabled while cancellation lock is active.',
+                            );
+                          }
+                          return;
+                        }
                         if (!mounted) return;
                         final confirm = await showDialog<bool>(
                           context: context,

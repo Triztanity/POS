@@ -18,12 +18,14 @@ class DeviceConfigService {
   static final Map<String, String> _deviceRegistry = {
     // Full serial numbers (preferred - most specific)
     'H10P746259A0982': 'BUS-002',
-    'H10P74625AU0044': 'BUS-001',
+    'H10P74625AU0044':
+        'BUS-002', // currently attached device used for BUS-002 POS2
     // Android IDs (strong identifier for these devices)
+    '43e20937c71bb2ad': 'BUS-002', // current androidId observed on this device
     'e9fb9c8908a3cb9f': 'BUS-002', // androidId for H10P746259A0982
     '3509c0f95b84cb3e': 'BUS-002', // androidId for new BUS-002 device
+    '2590ecaf10bb2b56': 'BUS-001', // legacy BUS-001 androidId
     // Replaced previous BUS-001 androidId with the current device id.
-    // Old android id '2590ecaf10bb2b56' removed per device reprovisioning.
     '9983553c95c05ad9': 'BUS-001', // current androidId for BUS-001 device
   };
 

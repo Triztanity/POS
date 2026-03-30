@@ -22,9 +22,11 @@ class AppState {
   StreamSubscription<Map<String, dynamic>>? _nfcSub;
   bool _inspectorModalActive = false;
   String _currentScreen = '';
+  bool _tripCancelledLocked = false;
 
   bool get inspectorModalActive => _inspectorModalActive;
   String get currentScreen => _currentScreen;
+  bool get tripCancelledLocked => _tripCancelledLocked;
 
   void setInspectorModalActive(bool v) {
     _inspectorModalActive = v;
@@ -33,6 +35,11 @@ class AppState {
   void setCurrentScreen(String screen) {
     debugPrint('[APP-STATE] setCurrentScreen: $screen');
     _currentScreen = screen;
+  }
+
+  void setTripCancelledLocked(bool locked) {
+    debugPrint('[APP-STATE] setTripCancelledLocked: $locked');
+    _tripCancelledLocked = locked;
   }
 
   void setConductor(Map<String, dynamic>? conductor) {
@@ -99,5 +106,7 @@ class AppState {
     debugPrint('[APP-STATE] clearSession');
     _conductor = null;
     _driver = null;
+    _pendingDriver = null;
+    _tripCancelledLocked = false;
   }
 }
