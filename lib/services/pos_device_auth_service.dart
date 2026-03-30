@@ -34,6 +34,11 @@ class POSDeviceAuthService {
       'password': 'Test1234.',
       'deviceName': 'BUS-001',
     },
+    '8c659d9568ab52a2': {
+      'email': 'posdevice001@example.com',
+      'password': 'Test1234.',
+      'deviceName': 'BUS-001',
+    },
     'e9fb9c8908a3cb9f': {
       'email': 'posdevice002@example.com',
       'password': 'Test1234.',
