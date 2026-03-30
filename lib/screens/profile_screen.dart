@@ -31,12 +31,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, dynamic>?
       _pendingDriver; // Driver waiting for dispatcher approval
 
+  bool _logoutBlockedByAcceptedSchedule = false;
+  bool _checkingLogoutPolicy = false;
+
+  bool _isAcceptedScheduleStatus(String status) {
+    status = status.toLowerCase();
+    return ['pre-departure', 'dispatched', 'departed', 'in-progress']
+        .contains(status);
+  }
+
+  Future<void> _refreshLogoutPolicy() async {
+    setState(() {
+      _checkingLogoutPolicy = true;
+    });
+
+    try {
+      final tripId = LocalStorage.getCurrentTripId();
+      if (tripId.isEmpty || tripId.startsWith('TRIP-UNKNOWN')) {
+        setState(() {
+          _logoutBlockedByAcceptedSchedule = false;
+        });
+        return;
+      }
+
+      String status = LocalStorage.getCurrentTripStatus();
+      if (status.isEmpty) {
+        // Fallback to Firestore
+        final schedule = await FirebaseDispatchService().getSchedule(tripId);
+        if (schedule != null) {
+          status = (schedule['status'] ?? '').toString();
+        }
+      }
+
+      final isBlocked = status.isNotEmpty && _isAcceptedScheduleStatus(status);
+      if (mounted) {
+        setState(() {
+          _logoutBlockedByAcceptedSchedule = isBlocked;
+        });
+      }
+    } catch (e) {
+      debugPrint('[PROFILE] Error refreshing logout policy: $e');
+      final tripId = LocalStorage.getCurrentTripId();
+      if (tripId.isNotEmpty && !tripId.startsWith('TRIP-UNKNOWN')) {
+        if (mounted) {
+          setState(() {
+            _logoutBlockedByAcceptedSchedule = true;
+          });
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _checkingLogoutPolicy = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
     final screenH = mq.size.height;
     final screenW = mq.size.width;
     final isLocked = AppState.instance.tripCancelledLocked;
+    final logoutBlocked = isLocked || _logoutBlockedByAcceptedSchedule;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -92,12 +150,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
               SizedBox(height: screenH * 0.04),
 
               // Logout Button
-              SizedBox(
-                width: double.infinity,
-                height: screenH * 0.065,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    // Require NFC confirmation: only the same conductor may log out
+              if (_checkingLogoutPolicy)
+                const Center(child: CircularProgressIndicator())
+              else if (logoutBlocked)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    "Logout disabled while active schedule is accepted.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                )
+              else
+                SizedBox(
+                  width: double.infinity,
+                  height: screenH * 0.065,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      if (_logoutBlockedByAcceptedSchedule) {
+                        await Dialogs.showMessage(
+                            context, 'Blocked', 'Logout disabled while active schedule is accepted.');
+                        return;
+                      }
+
+                      // Require NFC confirmation: only the same conductor may log out
                     final current = AppState.instance.conductor;
                     if (current == null) {
                       await Dialogs.showMessage(context, 'Error',
@@ -262,6 +346,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _refreshLogoutPolicy();
     // Restore driver from AppState or LocalStorage if already set
     _driver = AppState.instance.driver ?? LocalStorage.loadCurrentDriver();
     if (_driver != null && AppState.instance.driver == null) {
@@ -453,6 +538,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       AppState.instance.setTripCancelledLocked(true);
+      _refreshLogoutPolicy();
 
       await Dialogs.showMessage(
         context,
