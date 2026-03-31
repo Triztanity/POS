@@ -145,6 +145,37 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       final finalFare =
           perSeatTotal > 0 ? perSeatTotal : result['finalFare'] as double;
 
+      // Build readable passenger type display: unique ordered types joined by '/'
+      String formatPassengerType(String type) {
+        final normalized = type.trim().toUpperCase();
+        switch (normalized) {
+          case 'REGULAR':
+            return 'Regular';
+          case 'STUDENT':
+            return 'Student';
+          case 'SENIOR':
+            return 'Senior';
+          case 'PWD':
+            return 'PWD';
+          case 'CHILD':
+            return 'Child';
+          default:
+            return type.trim();
+        }
+      }
+
+      final displayedPassengerTypes = <String>[];
+      for (var type in passengerTypes) {
+        final formatted = formatPassengerType(type);
+        if (formatted.isEmpty) continue;
+        if (!displayedPassengerTypes.contains(formatted)) {
+          displayedPassengerTypes.add(formatted);
+        }
+      }
+      final displayPassengerType = displayedPassengerTypes.isNotEmpty
+          ? displayedPassengerTypes.join('/')
+          : formatPassengerType(passengerType);
+
       // Step 6: Create scanned ticket record
       final scannedTicket = ScannedTicket(
         id: 'ST-${DateTime.now().millisecondsSinceEpoch}',
@@ -192,7 +223,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         'passengerName': qrData.passengerName,
         'numberOfPassengers': qrData.numberOfPassengers,
         'quantity': qrData.numberOfPassengers.toString(),
-        'passengerType': passengerType,
+        'passengerType': displayPassengerType,
         'distance': ticketDistance,
         'originalFare': originalFare.toStringAsFixed(2),
         'discountAmount': discountAmount.toStringAsFixed(2),

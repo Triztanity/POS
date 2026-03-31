@@ -59,6 +59,9 @@ class TicketPrinter {
       var to = _singleLine(ticketData['to']?.toString() ?? 'N/A');
       if (from.contains('|')) from = from.split('|').last.trim();
       if (to.contains('|')) to = to.split('|').last.trim();
+      // Remove leading numeric prefixes from station names (e.g., "1. NASUGBU", "23. TUY")
+      from = from.replaceAll(RegExp(r'^\s*\d+[\.|\)]?\s*'), '').trim();
+      to = to.replaceAll(RegExp(r'^\s*\d+[\.|\)]?\s*'), '').trim();
       final distance = ticketData['distance']?.toString() ?? '0';
       final quantity = ticketData['quantity']?.toString() ??
           ticketData['numberOfPassengers']?.toString() ??

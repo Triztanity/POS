@@ -1396,11 +1396,25 @@ class _HomeScreenState extends State<HomeScreen> {
           final minute = now.minute.toString().padLeft(2, '0');
           final time = '$hour12:$minute $period';
 
-          final totalAmount = (fare * quantity).toStringAsFixed(2);
-
           // Extract place names from formatted strings (km|Place)
           final originPlace = FareTable.extractPlaceName(fromLocation);
           final destPlace = FareTable.extractPlaceName(toLocation);
+
+          final actualTotal = fare * quantity;
+          final totalAmount = actualTotal.toStringAsFixed(2);
+
+          // Compute walk-in discount as difference between regular total and actual total
+          final regularFarePerSeat = FareCalculator.calculateFare(
+            origin: originPlace,
+            destination: destPlace,
+            passengerType: 'REGULAR',
+            quantity: 1,
+          ).toDouble();
+          final regularTotal = regularFarePerSeat * quantity;
+          final discountValue =
+              (regularTotal - actualTotal).clamp(0.0, double.infinity);
+          final regularAmount = regularTotal.toStringAsFixed(2);
+          final discountAmount = discountValue.toStringAsFixed(2);
 
           // Get route display (just "North" or "South")
           String routeDisplay = (routeDirection == 'north_to_south')
@@ -1458,8 +1472,8 @@ class _HomeScreenState extends State<HomeScreen> {
             payment: "CASH",
             quantity: quantity.toString(),
             amount: totalAmount,
-            originalFare: totalAmount,
-            discountAmount: '0.00',
+            originalFare: regularAmount,
+            discountAmount: discountAmount,
           );
 
           // Create walk-in record and persist to dedicated walkins storage
