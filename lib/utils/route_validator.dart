@@ -87,18 +87,19 @@ class RouteValidator {
   /// - Handle common abbreviations/typos
   static String normalizeStationName(String name) {
     var normalized = name.trim();
-    
+
     // Remove station number prefix (e.g., "1. Nasugbu Terminal" → "Nasugbu Terminal")
     normalized = normalized.replaceAll(RegExp(r'^\d+\.\s*'), '');
-    
+
     normalized = normalized.toUpperCase();
-    
+
     // Remove punctuation (dots, slashes, commas, parentheses, etc.) to normalize variants
-    normalized = normalized.replaceAll(RegExp(r'[\p{P}\p{S}]', unicode: true), '');
+    normalized =
+        normalized.replaceAll(RegExp(r'[\p{P}\p{S}]', unicode: true), '');
 
     // Remove extra whitespace
     normalized = normalized.replaceAll(RegExp(r'\s+'), ' ');
-    
+
     // Handle common aliases/variations
     final aliases = {
       'NASUGBU': 'NASUGBU TERMINAL',
@@ -109,6 +110,9 @@ class RouteValidator {
       'PALICO': 'PALICO TERMINAL',
       'PAHINANTE': 'PAHINANTE WAITING SHED',
       'BILARAN': 'BILARAN ELEM SCHOOL WAITING SHED',
+      'PAG ASA PANTAY': 'ALFAMART PANTAY',
+      'PAG-ASA-PANTAY': 'ALFAMART PANTAY',
+      'PAGASA-PANTAY': 'ALFAMART PANTAY',
       'LANATAN': 'BRGY. HALL LANATAN',
       'SAMPAGA': 'BRGY HALL/WAITING SHED SAMPAGA',
       'CALACA': 'ROBINSONS CALACA/BAYAN',
@@ -117,12 +121,15 @@ class RouteValidator {
       'TAWILISAN': 'TAWILISAN 7 11',
       'MAHAYAHAY': 'MAHAYAHAY 7 11',
       'MATAAS': 'MATAAS NA BAYAN BRGY. HALL',
+      'STA RITA': 'STA. RITA BRGY. HALL COMPLEX',
+      'STA. RITA': 'STA. RITA BRGY. HALL COMPLEX',
+      'STA. RITA BRGY HALL': 'STA. RITA BRGY. HALL COMPLEX',
     };
-    
+
     if (aliases.containsKey(normalized)) {
       return aliases[normalized]!;
     }
-    
+
     return normalized;
   }
 
@@ -130,25 +137,42 @@ class RouteValidator {
   /// e.g., "BRGY. HALL LANATAN" → "LANATAN", "MAHAYAHAY 7 11" → "MAHAYAHAY"
   static String extractPlaceName(String station) {
     const descriptors = [
-      'BRGY. HALL', 'BRGY HALL', 'WAITING SHED', 'ELEM SCHOOL', 'SCHOOL',
-      'TERMINAL', 'SHED', 'CHURCH', 'INTERSECTION', 'MALL', 'FUEL',
-      'GAS STATION', 'CLEAN FUEL', 'FOOD HOUSE', 'ICE PLANT', 'DEPOT',
-      'XENTRO', 'TEA PROJECT', 'COMPLEX', 'STATION', 'PROJECT',
+      'BRGY. HALL',
+      'BRGY HALL',
+      'WAITING SHED',
+      'ELEM SCHOOL',
+      'SCHOOL',
+      'TERMINAL',
+      'SHED',
+      'CHURCH',
+      'INTERSECTION',
+      'MALL',
+      'FUEL',
+      'GAS STATION',
+      'CLEAN FUEL',
+      'FOOD HOUSE',
+      'ICE PLANT',
+      'DEPOT',
+      'XENTRO',
+      'TEA PROJECT',
+      'COMPLEX',
+      'STATION',
+      'PROJECT',
     ];
-    
+
     var name = station.trim().toUpperCase();
     name = name.replaceAll(RegExp(r'^\d+\.\s*'), ''); // Remove number prefix
-    
+
     // Remove known descriptors from start and end
     for (final desc in descriptors) {
       name = name.replaceAll(RegExp('^$desc\\s*'), '');
       name = name.replaceAll(RegExp('\\s*$desc\$'), '');
     }
-    
+
     // Remove extra spaces and slashes
     name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
     name = name.replaceAll(RegExp(r'/.*$'), ''); // Remove everything after /
-    
+
     return name.isNotEmpty ? name : station.trim();
   }
 
@@ -156,13 +180,13 @@ class RouteValidator {
   /// Returns -1 if not found
   static int findStationIndex(String stationName, List<String> directionList) {
     final normalized = normalizeStationName(stationName);
-    
+
     for (int i = 0; i < directionList.length; i++) {
       if (normalizeStationName(directionList[i]) == normalized) {
         return i;
       }
     }
-    
+
     return -1;
   }
 
@@ -174,10 +198,10 @@ class RouteValidator {
     String routeDirection,
   ) {
     final stationList = getStationListForDirection(routeDirection);
-    
+
     final originIndex = findStationIndex(origin, stationList);
     final destIndex = findStationIndex(destination, stationList);
-    
+
     // Check if both stations exist
     if (originIndex == -1 || destIndex == -1) {
       // Use extracted place names for error display
@@ -185,11 +209,12 @@ class RouteValidator {
       final destPlace = extractPlaceName(destination);
       return ValidationResult(
         isValid: false,
-        message: 'Invalid passenger route:\n$originPlace → $destPlace\n\nPassenger boarded the wrong bus or selected an invalid route.',
+        message:
+            'Invalid passenger route:\n$originPlace → $destPlace\n\nPassenger boarded the wrong bus or selected an invalid route.',
         errorType: 'OUT_OF_ROUTE',
       );
     }
-    
+
     // Check if origin comes before destination
     if (originIndex >= destIndex) {
       // Use extracted place names for error display
@@ -197,11 +222,12 @@ class RouteValidator {
       final destPlace = extractPlaceName(destination);
       return ValidationResult(
         isValid: false,
-        message: 'Invalid passenger route:\n$originPlace → $destPlace\n\nPassenger boarded the wrong bus or selected an invalid route.',
+        message:
+            'Invalid passenger route:\n$originPlace → $destPlace\n\nPassenger boarded the wrong bus or selected an invalid route.',
         errorType: 'OUT_OF_ROUTE',
       );
     }
-    
+
     return ValidationResult(
       isValid: true,
       message: 'Route validated.',

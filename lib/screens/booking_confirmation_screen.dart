@@ -103,7 +103,7 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
       appBar: AppBar(
         backgroundColor: Colors.green[700],
         title: const Text(
-          'BOOKING CONFIRMATION',
+          'BOOKING',
           style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         centerTitle: true,
@@ -137,8 +137,6 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                             color: Colors.green[700]),
                       ),
                       const SizedBox(height: 6),
-                      _buildInfoRow('User ID:', widget.qrData.userId),
-                      _buildInfoRow('Booking ID:', widget.qrData.bookingId),
                       _buildInfoRow('From:', widget.qrData.origin),
                       _buildInfoRow('To:', widget.qrData.destination),
                       _buildInfoRow(

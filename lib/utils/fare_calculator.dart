@@ -1,6 +1,9 @@
 // fare_calculator.dart
 // Contains fare table and fare calculation logic for the POS app.
 
+import 'booking_station_mapping.dart';
+import 'route_validator.dart';
+
 class FareEntry {
   final String place;
   final int km;
@@ -317,9 +320,62 @@ class BookingFareCalculator {
   ];
 
   static const List<int> bookingStationKms = [
-    0, 2, 3, 5, 6, 7, 9, 10, 11, 12, 14, 16, 18, 19, 20, 21, 23, 24, 25, 26, 
-    27, 29, 30, 32, 33, 35, 37, 38, 39, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 
-    52, 53, 54, 55, 56, 58, 60, 62, 64, 65, 66, 67, 69, 70, 70, 70
+    0,
+    2,
+    3,
+    5,
+    6,
+    7,
+    9,
+    10,
+    11,
+    12,
+    14,
+    16,
+    18,
+    19,
+    20,
+    21,
+    23,
+    24,
+    25,
+    26,
+    27,
+    29,
+    30,
+    32,
+    33,
+    35,
+    37,
+    38,
+    39,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    58,
+    60,
+    62,
+    64,
+    65,
+    66,
+    67,
+    69,
+    70,
+    70,
+    70
   ];
 
   /// Calculate fare based on booking station names
@@ -330,12 +386,14 @@ class BookingFareCalculator {
     required String passengerType,
     int quantity = 1,
   }) {
-    final cleanOrigin = origin.trim().toUpperCase();
-    final cleanDestination = destination.trim().toUpperCase();
+    // Resolve booking aliases to canonical route validators names
+    final resolvedOrigin = BookingStationMapping.resolveStation(origin);
+    final resolvedDestination =
+        BookingStationMapping.resolveStation(destination);
 
     // Find indices using fuzzy matching (handles formatting differences)
-    final originIndex = _findStationIndex(cleanOrigin);
-    final destIndex = _findStationIndex(cleanDestination);
+    final originIndex = _findStationIndex(resolvedOrigin);
+    final destIndex = _findStationIndex(resolvedDestination);
 
     if (originIndex == -1 || destIndex == -1) {
       // Stations not found
@@ -361,40 +419,37 @@ class BookingFareCalculator {
 
   /// Find a station index with fuzzy matching to handle formatting differences
   static int _findStationIndex(String stationName) {
-    // Normalize the input: replace hyphens with spaces, remove extra spaces
+    final resolvedStation = BookingStationMapping.resolveStation(stationName);
     final normalizedInput =
-        stationName.replaceAll('-', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+        RouteValidator.normalizeStationName(resolvedStation);
 
-    // Try exact match first after normalization
+    // Try exact match first against booking station canonical list
     for (int i = 0; i < bookingStations.length; i++) {
-      final normalizedStation = bookingStations[i]
-          .replaceAll('-', ' ')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
+      final normalizedStation =
+          RouteValidator.normalizeStationName(bookingStations[i]);
       if (normalizedStation == normalizedInput) {
         return i;
       }
     }
 
-    // Try partial/substring matches for partial station names
-    // e.g., "BATANGAS TERMINAL" should match "BATANGAS GRAND TERMINAL"
-    for (int i = 0; i < bookingStations.length; i++) {
-      final normalizedStation = bookingStations[i]
-          .replaceAll('-', ' ')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim()
-          .toUpperCase();
-
-      // Check if the station contains all the words from the input
-      final inputWords = normalizedInput.split(' ');
-      bool allWordsMatch = true;
-      for (var word in inputWords) {
-        if (word.isNotEmpty && !normalizedStation.contains(word)) {
-          allWordsMatch = false;
-          break;
-        }
+    // Try exact match in RouteValidator master list as fallback
+    final directionStations = RouteValidator.northStations;
+    for (int i = 0; i < directionStations.length; i++) {
+      final normalizedStation =
+          RouteValidator.normalizeStationName(directionStations[i]);
+      if (normalizedStation == normalizedInput) {
+        return i;
       }
+    }
 
+    // Try partial/substring match on normalized forms
+    final inputWords =
+        normalizedInput.split(' ').where((p) => p.isNotEmpty).toList();
+    for (int i = 0; i < bookingStations.length; i++) {
+      final normalizedStation =
+          RouteValidator.normalizeStationName(bookingStations[i]);
+      final allWordsMatch =
+          inputWords.every((word) => normalizedStation.contains(word));
       if (allWordsMatch && inputWords.isNotEmpty) {
         return i;
       }

@@ -10,56 +10,67 @@ class BookingStationMapping {
     'SAGBAT': 'SAGBAT',
     'CENTRAL': 'CENTRAL',
     'IRRIGATION': 'IRRIGATION WAITING SHED/TODA',
-    
+
     // Stations 6-10
     'BILARAN': 'BILARAN ELEM SCHOOL WAITING SHED',
+    'BILIRAN': 'BILARAN ELEM SCHOOL WAITING SHED',
+    'BILIRAN ELEM SCHOOL': 'BILARAN ELEM SCHOOL WAITING SHED',
+    'BILARAN ELEM SCHOOL': 'BILARAN ELEM SCHOOL WAITING SHED',
+    'BILIRAN ELEM SCHOOL WAITING SHED': 'BILARAN ELEM SCHOOL WAITING SHED',
+    'BILARAN ELEM SCHOOL WAITING SHED': 'BILARAN ELEM SCHOOL WAITING SHED',
     'PALICO': 'PALICO TERMINAL',
     'PAHINANTE': 'PAHINANTE WAITING SHED',
     'LUNTAL': 'LUNTAL WAITING SHED',
     'TALON': 'TALON WAITING SHED',
-    
+
     // Stations 11-15
     'TUY': 'TUY',
     'OBISPO': 'OBISPO',
     'PUTOL': 'BRGY PUTOL WAITING SHED',
     'GUINHAWA': 'BRGY GUINHAWA WAITING SHED',
     'MUNTING TUBIG': 'FLYING V MUNTING TUBIG',
-    
+
     // Stations 16-20
     'LANATAN': 'BRGY HALL LANATAN',
     'BALAYAN': 'BALAYAN WALTERMART',
     'GUMAMELA': 'SPYDER FUEL GUMAMELA',
     'GIMALAS': 'GIMALAS',
     'CAYBUNGA': 'ALFAMART CAYBUNGA',
-    
+
     // Stations 21-25
     'SAMPAGA': 'BRGY HALL/WAITING SHED SAMPAGA',
     'DACANLAO': 'DACANLAO WAITING SHED',
     'PAG-ASA/PANTAY': 'ALFAMART PANTAY',
+    'PAG ASA/PANTAY': 'ALFAMART PANTAY',
+    'PAGASA/PANTAY': 'ALFAMART PANTAY',
+    'PAG-ASA PANTAY': 'ALFAMART PANTAY',
+    'PAG ASA PANTAY': 'ALFAMART PANTAY',
+    'PANTAY': 'ALFAMART PANTAY',
+    'PAGASA': 'ALFAMART PANTAY',
     'CALACA/BAYAN': 'ROBINSONS CALACA/BAYAN',
     'SALONG': 'FLAMINGO GAS STATION SALONG',
-    
+
     // Stations 26-30
     'PUTING BATO': 'PUTING BATO CALACA',
     'SINISIAN': 'SINISIAN ELEM SCHOOL',
     'MATAAS NA BAYAN': 'MATAAS NA BAYAN BRGY. HALL',
     'MAHAYAHAY': 'MAHAYAHAY 7 11',
     'MATINGAIN': 'MATINGAIN MALL NA POON',
-    
+
     // Stations 31-35
     'BUKAL': 'BUKAL THE BLACK TEA PROJECT',
     'TUBIGAN': 'TUBIGAN ICE PLANT',
     'MALINIS': 'MALINIS WILCON DEPOT',
     'LEMERY XENTRO MALL': 'LEMERY XENTRO MALL',
     'LAGUILE': 'LAGUILE FOOD HOUSE',
-    
+
     // Stations 36-40
     'HALANG': 'HALANG FLYING V',
     'LATAG': 'LATAG WAITING SHED',
     'TULO': 'TULO WAITING SHED',
     'JOLLIBEE TAAL': 'JOLLIBEE TAAL',
     'BULI': 'BULI BRGY. HALL',
-    
+
     // Stations 41-45
     'TAWILISAN': 'TAWILISAN 7 11',
     'MOHON': 'MOHON ELEM SCHOOL',
@@ -73,19 +84,21 @@ class BookingStationMapping {
     'MANGHINAO': 'MANGHINAO',
     'BAUAN': 'CITIMART BAUAN',
     'DIVERSION': 'DIVERSION NTC',
-    'STA RITA': 'STA. RITA BRGY. HALL',
-    'STA. RITA': 'STA. RITA BRGY. HALL',
+    'STA RITA': 'STA. RITA BRGY. HALL COMPLEX',
+    'STA. RITA': 'STA. RITA BRGY. HALL COMPLEX',
+    'STA RITA BRGY HALL': 'STA. RITA BRGY. HALL COMPLEX',
+    'STA. RITA BRGY HALL': 'STA. RITA BRGY. HALL COMPLEX',
   };
 
   /// Resolve a booking system station name to the RouteValidator station name
   static String resolveStation(String bookingStation) {
     final cleaned = bookingStation.trim().toUpperCase();
-    
+
     // Try exact match first
     if (bookingToRouteValidator.containsKey(cleaned)) {
       return bookingToRouteValidator[cleaned]!;
     }
-    
+
     // If not found, return the cleaned name as-is
     // Most names should match directly now since they're standardized
     return cleaned;
