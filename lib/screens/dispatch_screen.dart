@@ -138,6 +138,19 @@ class _DispatchScreenState extends State<DispatchScreen> {
     await LocalStorage.setCurrentVehicleNo(assignedBus);
     await LocalStorage.resetTripState(newTrip);
 
+    // Save the full accepted schedule data locally — primary offline source for scheduleTime
+    try {
+      // Merge _nextSchedule with any extra fields we know at dispatch time
+      final scheduleToSave = Map<String, dynamic>.from(_nextSchedule ?? {});
+      scheduleToSave['tripId'] = newTrip;
+      scheduleToSave['busNumber'] = assignedBus;
+      scheduleToSave['savedAt'] = DateTime.now().toIso8601String();
+      await LocalStorage.saveAcceptedSchedule(scheduleToSave);
+      debugPrint('[Dispatch] Saved accepted schedule for offline use. tripId=$newTrip');
+    } catch (e) {
+      debugPrint('[Dispatch] Warning: failed to save accepted schedule locally: $e');
+    }
+
     try {
       BookingManager().clearBookings();
       if (prevUid != null && prevUid.isNotEmpty) {

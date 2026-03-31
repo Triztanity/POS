@@ -71,6 +71,9 @@ class LocalStorage {
       }
       debugPrint(
           '[LocalStorage] Cleared all session, trip, booking, and ticket data');
+      // Phase 5: consumed_bookings box is deliberately NOT cleared here.
+      // This preserves durable anti-replay protection across trip boundaries,
+      // session resets, and app restarts.
     } catch (e) {
       debugPrint(
           '[LocalStorage] Error clearing session/trip/booking/ticket: $e');
@@ -84,6 +87,8 @@ class LocalStorage {
   static const _scannedTicketsBox = 'scanned_tickets';
   static const _walkinsBox = 'walkins';
   static const _tripsBox = 'trips';
+  /// Durable anti-replay store: survives trip resets, session clears, app restarts (Phase 4)
+  static const _consumedBookingsBox = 'consumed_bookings';
 
   static Future<void> init() async {
     try {
@@ -167,6 +172,17 @@ class LocalStorage {
       }
     } else {
       debugPrint('[LocalStorage] Box $_tripsBox already open');
+    }
+    // Durable anti-replay consumed bookings store (Phase 4)
+    if (!Hive.isBoxOpen(_consumedBookingsBox)) {
+      try {
+        await Hive.openBox<Map>(_consumedBookingsBox);
+        debugPrint('[LocalStorage] Opened box $_consumedBookingsBox');
+      } catch (e) {
+        debugPrint('[LocalStorage] Error opening box $_consumedBookingsBox: $e');
+      }
+    } else {
+      debugPrint('[LocalStorage] Box $_consumedBookingsBox already open');
     }
     // Migrate any legacy keys (e.g. colon-separated UIDs) to normalized keys
     final box = Hive.box<Map>(_boxName);
@@ -960,5 +976,175 @@ class LocalStorage {
     }
 
     return buffer.toString();
+  }
+
+  // ─── Durable Anti-Replay: Consumed Bookings (Phase 4) ───
+
+  /// Mark a booking as consumed (permanently one-time). Survives trip resets and session clears.
+  static Future<void> markBookingConsumed(String bookingId, {String? tripId, String? busNumber}) async {
+    try {
+      final box = Hive.box<Map>(_consumedBookingsBox);
+      await box.put(bookingId, {
+        'bookingId': bookingId,
+        'consumedAt': DateTime.now().millisecondsSinceEpoch,
+        'tripId': tripId ?? getCurrentTripId(),
+        'busNumber': busNumber ?? getCurrentVehicleNo(),
+      });
+      debugPrint('[LocalStorage] Marked booking $bookingId as consumed');
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR marking booking consumed: $e');
+    }
+  }
+
+  /// Check if a booking has been consumed (durable check).
+  static bool isBookingConsumed(String bookingId) {
+    try {
+      final box = Hive.box<Map>(_consumedBookingsBox);
+      return box.containsKey(bookingId);
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR checking consumed booking: $e');
+      // Fail-closed: if we can't verify, treat as consumed to block replay (Phase 6)
+      return true;
+    }
+  }
+
+  /// Get consumed booking metadata (for diagnostics/audit).
+  static Map<String, dynamic>? getConsumedBookingInfo(String bookingId) {
+    try {
+      final box = Hive.box<Map>(_consumedBookingsBox);
+      final raw = box.get(bookingId);
+      if (raw == null) return null;
+      return Map<String, dynamic>.from(raw.cast<String, dynamic>());
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR getting consumed booking info: $e');
+      return null;
+    }
+  }
+
+  // ─── Active Schedule Context (Phase 3) ───
+
+  /// Store the active schedule time key for scan-time validation
+  static Future<void> setActiveScheduleTimeKey(String scheduleTimeKey) async {
+    try {
+      final box = Hive.box<Map>(_sessionBox);
+      final session = box.get('sessionData');
+      final newSession =
+          Map<String, dynamic>.from(session?.cast<String, dynamic>() ?? {});
+      newSession['activeScheduleTimeKey'] = scheduleTimeKey;
+      await box.put('sessionData', newSession as Map);
+      debugPrint('[LocalStorage] Set active schedule time key: $scheduleTimeKey');
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR setting active schedule time key: $e');
+    }
+  }
+
+  /// Get the active schedule time key for scan-time validation
+  static String getActiveScheduleTimeKey() {
+    try {
+      final box = Hive.box<Map>(_sessionBox);
+      final session = box.get('sessionData');
+      if (session != null) {
+        final s = Map<String, dynamic>.from(session.cast<String, dynamic>());
+        return s['activeScheduleTimeKey']?.toString() ?? '';
+      }
+      return '';
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR getting active schedule time key: $e');
+      return '';
+    }
+  }
+
+  // ─── Accepted Schedule (Primary source for schedule identity) ───
+
+  /// Save the full accepted schedule Firestore document locally at dispatch time.
+  /// This is the primary source for schedule metadata during the trip — no network needed.
+  static Future<void> saveAcceptedSchedule(Map<String, dynamic> scheduleData) async {
+    try {
+      final box = Hive.box<Map>(_sessionBox);
+      // Convert Timestamp fields to ISO strings for safe Hive storage
+      final serializable = _serializeScheduleMap(scheduleData);
+      await box.put('acceptedSchedule', serializable as Map);
+      // Also persist the normalized schedule time key immediately
+      final scheduleTimeKey = _extractScheduleTimeKey(serializable);
+      await setActiveScheduleTimeKey(scheduleTimeKey);
+      debugPrint('[LocalStorage] Saved accepted schedule. scheduleTimeKey: "$scheduleTimeKey"');
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR saving accepted schedule: $e');
+    }
+  }
+
+  /// Load the full accepted schedule document saved at dispatch time.
+  static Map<String, dynamic>? getAcceptedSchedule() {
+    try {
+      final box = Hive.box<Map>(_sessionBox);
+      final raw = box.get('acceptedSchedule');
+      if (raw == null) return null;
+      return Map<String, dynamic>.from(raw.cast<String, dynamic>());
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR loading accepted schedule: $e');
+      return null;
+    }
+  }
+
+  /// Get the schedule time key directly from the locally saved accepted schedule.
+  /// This is the preferred, offline-safe call for QR validation.
+  static String getAcceptedScheduleTimeKey() {
+    try {
+      final schedule = getAcceptedSchedule();
+      if (schedule == null) return getActiveScheduleTimeKey(); // fallback
+      return _extractScheduleTimeKey(schedule);
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR extracting schedule time key: $e');
+      return '';
+    }
+  }
+
+  /// Extract and normalize the schedule time key from a schedule map.
+  /// Tries all known field variants and normalizes to yyyy-MM-dd HH:mm format.
+  static String _extractScheduleTimeKey(Map<String, dynamic> data) {
+    final raw = data['ScheduledTimeStr'] ??
+        data['scheduledTimeStr'] ??
+        data['ScheduleTime'] ??
+        data['scheduleTime'] ??
+        data['scheduledTime'] ??
+        data['scheduledTimeSTR'] ??
+        data['ScheduledTime'] ??
+        data['schedule_time'] ??
+        data['dispatchTime'];
+    if (raw == null) return '';
+    final text = raw.toString().trim();
+    if (text.isEmpty) return '';
+    final dt = DateTime.tryParse(text) ?? DateTime.tryParse(text.replaceFirst(' ', 'T'));
+    if (dt != null) {
+      final local = dt.toLocal();
+      return '${local.year.toString().padLeft(4, '0')}-'
+          '${local.month.toString().padLeft(2, '0')}-'
+          '${local.day.toString().padLeft(2, '0')} '
+          '${local.hour.toString().padLeft(2, '0')}:'
+          '${local.minute.toString().padLeft(2, '0')}';
+    }
+    return text.toLowerCase();
+  }
+
+  /// Convert Firestore Timestamp and DateTime fields to ISO strings for Hive storage.
+  static Map<String, dynamic> _serializeScheduleMap(Map<String, dynamic> data) {
+    final result = <String, dynamic>{};
+    data.forEach((k, v) {
+      if (v is DateTime) {
+        result[k] = v.toIso8601String();
+      } else if (v.runtimeType.toString().contains('Timestamp')) {
+        // Handle cloud_firestore Timestamp without importing it here
+        try {
+          result[k] = (v as dynamic).toDate().toIso8601String();
+        } catch (_) {
+          result[k] = v.toString();
+        }
+      } else if (v is Map) {
+        result[k] = _serializeScheduleMap(Map<String, dynamic>.from(v.cast<String, dynamic>()));
+      } else {
+        result[k] = v;
+      }
+    });
+    return result;
   }
 }

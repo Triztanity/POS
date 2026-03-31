@@ -14,6 +14,10 @@ class QRData {
   final DateTime bookingDate;
   final DateTime expiresAt;
 
+  /// Schedule metadata for anti-replay binding (Phase 2)
+  final String scheduleTime;
+  final String scheduleId;
+
   QRData({
     required this.bookingId,
     required this.userId,
@@ -26,6 +30,8 @@ class QRData {
     required this.numberOfPassengers,
     required this.bookingDate,
     required this.expiresAt,
+    this.scheduleTime = '',
+    this.scheduleId = '',
   });
 
   /// Parse QR data from raw JSON string
@@ -68,6 +74,15 @@ class QRData {
           ? map['expiresAt'] as DateTime
           : DateTime.tryParse(map['expiresAt']?.toString() ?? '') ??
               DateTime.now(),
+      // Schedule metadata for anti-replay binding
+      scheduleTime: (map['scheduleTime'] ??
+              map['scheduledTime'] ??
+              map['ScheduledTimeStr'] ??
+              map['scheduledTimeStr'] ??
+              map['ScheduleTime'] ??
+              '')
+          .toString(),
+      scheduleId: (map['scheduleId'] ?? map['ScheduleId'] ?? '').toString(),
     );
   }
 
@@ -174,6 +189,8 @@ class QRData {
       'numberOfPassengers': numberOfPassengers,
       'bookingDate': bookingDate.toIso8601String(),
       'expiresAt': expiresAt.toIso8601String(),
+      'scheduleTime': scheduleTime,
+      'scheduleId': scheduleId,
     };
   }
 

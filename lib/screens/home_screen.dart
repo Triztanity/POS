@@ -94,15 +94,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _refreshActiveScheduleContext() async {
-    final bus = (_assignedBus ?? '').trim();
-    if (bus.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _activeScheduleTimeKey = '';
-        _activeRouteDirectionKey = '';
-      });
-      return;
+    // ── Primary: read from locally saved accepted schedule (no network) ──
+    final localSchedule = LocalStorage.getAcceptedSchedule();
+    if (localSchedule != null) {
+      final localKey = LocalStorage.getAcceptedScheduleTimeKey();
+      final routeStr = (localSchedule['route'] ?? localSchedule['routeName'] ?? '').toString();
+      final derivedDirection = _deriveRouteDirectionFromText(routeStr);
+      if (localKey.isNotEmpty && mounted) {
+        setState(() {
+          _activeScheduleTimeKey = localKey;
+          if (derivedDirection.isNotEmpty) {
+            _activeRouteDirectionKey = derivedDirection;
+            routeDirection = derivedDirection;
+          }
+        });
+        debugPrint('[HomeScreen] Loaded schedule key from local: "$localKey"');
+      }
     }
+
+    // ── Secondary: poll Firebase to refresh/confirm (updates local if changed) ──
+    final bus = (_assignedBus ?? '').trim();
+    if (bus.isEmpty) return;
 
     try {
       final query = await FirebaseFirestore.instance
@@ -116,63 +128,88 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
 
       if (query.docs.isEmpty) {
-        setState(() {
-          _activeScheduleTimeKey = '';
-          _activeRouteDirectionKey = '';
-        });
+        // No departed schedule on Firebase — keep local schedule if present
+        if (localSchedule == null) {
+          setState(() {
+            _activeScheduleTimeKey = '';
+            _activeRouteDirectionKey = '';
+          });
+        }
         return;
       }
 
       final data = query.docs.first.data();
-      final activeScheduleKey = _normalizeScheduleKey(
-        data['ScheduledTimeStr'] ??
-            data['scheduledTimeStr'] ??
-            data['ScheduleTime'] ??
-            data['scheduleTime'] ??
-            data['scheduledTime'] ??
-            data['scheduledTimeSTR'],
-      );
+      // Debug: log all keys present in the schedule document
+      debugPrint('[HomeScreen] Firebase schedule doc keys: ${data.keys.toList()}');
+
+      final rawScheduleTime = data['ScheduledTimeStr'] ??
+          data['scheduledTimeStr'] ??
+          data['ScheduleTime'] ??
+          data['scheduleTime'] ??
+          data['scheduledTime'] ??
+          data['scheduledTimeSTR'] ??
+          data['ScheduledTime'] ??
+          data['schedule_time'] ??
+          data['dispatchTime'];
+
+      debugPrint('[HomeScreen] Firebase rawScheduleTime: $rawScheduleTime (${rawScheduleTime?.runtimeType})');
+
+      final activeScheduleKey = _normalizeScheduleKey(rawScheduleTime);
+      debugPrint('[HomeScreen] Firebase normalized activeScheduleKey: "$activeScheduleKey"');
+
       final routeStr = (data['route'] ?? data['routeName'] ?? '').toString();
       final derivedDirection = _deriveRouteDirectionFromText(routeStr);
 
-      setState(() {
-        _activeScheduleTimeKey = activeScheduleKey;
-        if (derivedDirection.isNotEmpty) {
-          _activeRouteDirectionKey = derivedDirection;
-          routeDirection = derivedDirection;
-        }
-      });
+      if (mounted) {
+        setState(() {
+          _activeScheduleTimeKey = activeScheduleKey;
+          if (derivedDirection.isNotEmpty) {
+            _activeRouteDirectionKey = derivedDirection;
+            routeDirection = derivedDirection;
+          }
+        });
+      }
+
+      // Update local store with latest Firebase data (keeps offline copy fresh)
+      if (activeScheduleKey.isNotEmpty) {
+        LocalStorage.setActiveScheduleTimeKey(activeScheduleKey);
+      }
+      // Persist full schedule doc locally if we don't have one yet
+      if (localSchedule == null && activeScheduleKey.isNotEmpty) {
+        final enriched = Map<String, dynamic>.from(data);
+        enriched['savedAt'] = DateTime.now().toIso8601String();
+        await LocalStorage.saveAcceptedSchedule(enriched);
+        debugPrint('[HomeScreen] Bootstrapped local schedule from Firebase.');
+      }
 
       final parts = routeStr.split(RegExp(r'\s+to\s+', caseSensitive: false));
       if (parts.length == 2) {
         final fromCity = parts[0].trim().toLowerCase();
         final toCity = parts[1].trim().toLowerCase();
-        setState(() {
-          final fromMatch = availableStops.cast<String?>().firstWhere(
-              (s) =>
-                  s != null &&
-                  FareTable.extractPlaceName(s)
-                      .toLowerCase()
-                      .startsWith(fromCity),
-              orElse: () => null);
-          final toMatch = availableStops.cast<String?>().firstWhere(
-              (s) =>
-                  s != null &&
-                  FareTable.extractPlaceName(s)
-                      .toLowerCase()
-                      .startsWith(toCity),
-              orElse: () => null);
-          if (fromMatch != null) fromLocation = fromMatch;
-          if (toMatch != null) toLocation = toMatch;
-        });
+        if (mounted) {
+          setState(() {
+            final fromMatch = availableStops.cast<String?>().firstWhere(
+                (s) =>
+                    s != null &&
+                    FareTable.extractPlaceName(s)
+                        .toLowerCase()
+                        .startsWith(fromCity),
+                orElse: () => null);
+            final toMatch = availableStops.cast<String?>().firstWhere(
+                (s) =>
+                    s != null &&
+                    FareTable.extractPlaceName(s)
+                        .toLowerCase()
+                        .startsWith(toCity),
+                orElse: () => null);
+            if (fromMatch != null) fromLocation = fromMatch;
+            if (toMatch != null) toLocation = toMatch;
+          });
+        }
       }
     } catch (e) {
-      debugPrint('[HomeScreen] Error refreshing active schedule context: $e');
-      if (!mounted) return;
-      setState(() {
-        _activeScheduleTimeKey = '';
-        _activeRouteDirectionKey = '';
-      });
+      debugPrint('[HomeScreen] Firebase schedule refresh error (non-fatal): $e');
+      // Non-fatal — local schedule is still valid
     }
   }
 

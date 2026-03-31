@@ -85,7 +85,16 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         return;
       }
 
-      // Check for duplicate scan (new validation)
+      // ── Phase 4: Durable anti-replay check (consumed bookings, survives restarts) ──
+      final consumedValidation =
+          QRValidationService.checkConsumed(qrData.bookingId);
+      if (!consumedValidation.isValid) {
+        await _handleValidationFailure(consumedValidation);
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
+
+      // ── Phase 1: Duplicate check within current trip scanned tickets (fail-closed) ──
       final duplicateValidation =
           QRValidationService.checkDuplicate(qrData.bookingId);
       if (!duplicateValidation.isValid) {
@@ -94,7 +103,16 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         return;
       }
 
-      // Bus validation (kept as-is per constraints)
+      // ── Phase 1: Expiration validation ──
+      final expirationValidation =
+          QRValidationService.validateExpiration(qrData);
+      if (!expirationValidation.isValid) {
+        await _handleValidationFailure(expirationValidation);
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
+
+      // ── Phase 1: Bus validation ──
       final busValidation = await QRValidationService.validateBusNumber(qrData);
       if (!busValidation.isValid) {
         await _handleValidationFailure(busValidation);
@@ -102,11 +120,42 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         return;
       }
 
-      // Route validation (centralized and index-based)
+      // ── Phase 1: Route validation ──
       final routeValidation =
           QRValidationService.validateRoute(qrData, widget.routeDirection);
       if (!routeValidation.isValid) {
         await _handleValidationFailure(routeValidation);
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
+
+      // ── Phase 2: Schedule metadata check (WARN-ONLY during transition) ──
+      // TODO: Re-enable blocking once QR producer includes scheduleTime in payload
+      final scheduleMetaValidation =
+          QRValidationService.validateScheduleMetadata(qrData);
+      if (!scheduleMetaValidation.isValid) {
+        debugPrint('[Scanner] WARN: ${scheduleMetaValidation.errorType} - ${scheduleMetaValidation.message}');
+        // Non-blocking: log but continue during QR producer transition period
+      }
+
+      // ── Phase 3: Schedule match check (WARN-ONLY during transition) ──
+      // TODO: Re-enable blocking once field name confirmed in Firestore + QR has scheduleTime
+      // Primary source: locally saved accepted schedule (saved at dispatch, no network needed)
+      final activeScheduleKey = LocalStorage.getAcceptedScheduleTimeKey();
+      debugPrint('[Scanner] activeScheduleKey from local accepted schedule: "$activeScheduleKey"');
+      debugPrint('[Scanner] QR scheduleTime: "${qrData.scheduleTime}"');
+      final scheduleMatchValidation =
+          QRValidationService.validateScheduleMatch(qrData, activeScheduleKey);
+      if (!scheduleMatchValidation.isValid) {
+        debugPrint('[Scanner] WARN: ${scheduleMatchValidation.errorType} - ${scheduleMatchValidation.message}');
+        // Non-blocking: log but continue during QR producer transition period
+      }
+
+      // ── Phase 4: Online consumed check (async, best-effort) ──
+      final onlineConsumedValidation =
+          await QRValidationService.checkConsumedOnline(qrData.bookingId);
+      if (!onlineConsumedValidation.isValid) {
+        await _handleValidationFailure(onlineConsumedValidation);
         if (mounted) setState(() => _isProcessing = false);
         return;
       }
@@ -244,6 +293,9 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       // Step 9: Save scanned ticket to local storage (persistent historical record)
       await LocalStorage.saveScannedTicket(scannedTicket.toMap());
 
+      // Step 9b: Mark booking as durably consumed (Phase 4 - anti-replay)
+      await LocalStorage.markBookingConsumed(qrData.bookingId);
+
       // Step 10: Create a single booking record for Firebase sync (POS will split for internal right-side calculations)
       final booking = Booking(
         id: qrData.bookingId,
@@ -327,24 +379,49 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
 
     if (!mounted) return;
 
-    if (errorType == 'UNDETERMINED_LOCATION') {
-      await _showError('Undetermined Location',
-          'System could not determine the origin or destination');
-      return;
+    switch (errorType) {
+      case 'UNDETERMINED_LOCATION':
+        await _showError('Undetermined Location',
+            'System could not determine the origin or destination');
+        return;
+      case 'OUT_OF_ROUTE':
+        await _showError('Out of Route',
+            'Passenger is out of route and going to the wrong direction');
+        return;
+      case 'WRONG_BUS':
+        await _showError('Wrong Bus', message);
+        return;
+      case 'DUPLICATE_SCAN':
+        await _showError('Already Used', 'This booking QR has already been used on this trip.');
+        return;
+      case 'ALREADY_CONSUMED':
+        await _showError('Already Used', message);
+        return;
+      case 'EXPIRED_QR':
+        await _showError('Expired QR', 'This booking QR code has expired.');
+        return;
+      case 'MISSING_SCHEDULE_METADATA':
+        await _showError('Invalid Booking QR',
+            'Booking QR is missing required schedule information. Please rebook with the latest app.');
+        return;
+      case 'SCHEDULE_MISMATCH':
+        await _showError('Schedule Mismatch', message);
+        return;
+      case 'NO_ACTIVE_SCHEDULE':
+        await _showError('No Active Schedule',
+            'No active schedule detected on this POS device. Cannot verify booking.');
+        return;
+      case 'DUPLICATE_CHECK_ERROR':
+      case 'CONSUMED_CHECK_ERROR':
+        await _showError('Verification Error',
+            'Unable to verify booking status. Please try again.');
+        return;
+      case 'DEVICE_NOT_CONFIGURED':
+        await _showError('Device Error', message);
+        return;
+      default:
+        await _showError('Validation Failed', message);
     }
-
-    if (errorType == 'OUT_OF_ROUTE') {
-      await _showError('Out of Route',
-          'Passenger is out of route and going to the wrong direction');
-      return;
-    }
-
-    if (errorType == 'WRONG_BUS') {
-      await _showError('Wrong Bus', message);
-      return;
-    }
-
-    await _showError('Validation Failed', message);
   }
 
   Future<void> _showError(String title, String message) async {
