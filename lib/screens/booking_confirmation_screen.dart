@@ -45,8 +45,8 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
   @override
   void initState() {
     super.initState();
-    originalFare = widget.qrData.fareAmount;
-    finalFare = originalFare;
+    originalFare = 0;
+    finalFare = 0;
 
     passengerCount = widget.qrData.numberOfPassengers > 0
         ? widget.qrData.numberOfPassengers
@@ -67,94 +67,29 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
         .trim()
         .toUpperCase();
 
-    if (passengerCount > 1) {
-      final qrFareRaw = widget.qrData.fareAmount;
-      final regularSeatFareFromQr = (qrFareRaw > 0)
-          ? (qrFareRaw / passengerCount)
-          : BookingFareCalculator.calculateFare(
-              origin: normalizedOrigin,
-              destination: normalizedDestination,
-              passengerType: 'REGULAR',
-              quantity: 1,
-            ).toDouble();
-
-      perSeatFares = selectedPassengerTypes.map((type) {
-        final normalized = type.trim().toUpperCase();
-        return BookingFareCalculator.calculateFare(
-          origin: normalizedOrigin,
-          destination: normalizedDestination,
-          passengerType: normalized,
-          quantity: 1,
-        ).toDouble();
-      }).toList();
-
-      finalFare = perSeatFares.fold(0.0, (sum, f) => sum + f);
-      originalFare =
-          (qrFareRaw > 0) ? qrFareRaw : regularSeatFareFromQr * passengerCount;
-      final regularTotal = regularSeatFareFromQr * passengerCount;
-      discountAmount = (regularTotal - finalFare).clamp(0.0, double.infinity);
-      selectedPassengerType = selectedPassengerTypes.first;
-      return;
-    }
-
-    if (selectedPassengerType == null) return;
-    final normalizedPassengerType = selectedPassengerType!.trim().toUpperCase();
-    final qrFareRaw = widget.qrData.fareAmount;
-
-    final regularFare = BookingFareCalculator.calculateFare(
+    final regularSeatFare = BookingFareCalculator.calculateFare(
       origin: normalizedOrigin,
       destination: normalizedDestination,
       passengerType: 'REGULAR',
-      quantity: passengerCount,
+      quantity: 1,
     ).toDouble();
 
-    final selectedFare = BookingFareCalculator.calculateFare(
-      origin: normalizedOrigin,
-      destination: normalizedDestination,
-      passengerType: normalizedPassengerType,
-      quantity: passengerCount,
-    ).toDouble();
+    perSeatFares = selectedPassengerTypes.map((type) {
+      final normalized = type.trim().toUpperCase();
+      return BookingFareCalculator.calculateFare(
+        origin: normalizedOrigin,
+        destination: normalizedDestination,
+        passengerType: normalized,
+        quantity: 1,
+      ).toDouble();
+    }).toList();
 
-    final baselineRegularFare = qrFareRaw > 0 ? qrFareRaw : regularFare;
-    final perSeatBaseline = passengerCount > 0
-        ? (baselineRegularFare / passengerCount)
-        : baselineRegularFare;
-    final baselineEntry = FareTable.getEntryByFare(perSeatBaseline);
-
-    if (normalizedPassengerType == 'REGULAR') {
-      originalFare = baselineRegularFare > 0 ? baselineRegularFare : qrFareRaw;
-      finalFare = originalFare;
-      discountAmount = 0;
-      return;
+    originalFare = regularSeatFare * passengerCount;
+    finalFare = perSeatFares.fold(0.0, (sum, f) => sum + f);
+    discountAmount = (originalFare - finalFare).clamp(0.0, double.infinity);
+    if (selectedPassengerTypes.isNotEmpty) {
+      selectedPassengerType = selectedPassengerTypes.first;
     }
-
-    if (baselineRegularFare <= 0) {
-      originalFare = 0;
-      finalFare = 0;
-      discountAmount = 0;
-      return;
-    }
-
-    double computedDiscountedFare = 0;
-    if (baselineEntry != null) {
-      computedDiscountedFare =
-          baselineEntry.discount.toDouble() * passengerCount;
-    } else if (selectedFare > 0 && regularFare > 0) {
-      final discountRatio = (selectedFare / regularFare).clamp(0.0, 1.0);
-      computedDiscountedFare = baselineRegularFare * discountRatio;
-    } else {
-      computedDiscountedFare = baselineRegularFare * 0.80;
-    }
-
-    originalFare = baselineRegularFare;
-    if (computedDiscountedFare > 0) {
-      finalFare = computedDiscountedFare < originalFare
-          ? computedDiscountedFare
-          : originalFare;
-    } else {
-      finalFare = originalFare;
-    }
-    discountAmount = originalFare - finalFare;
   }
 
   @override

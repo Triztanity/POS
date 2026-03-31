@@ -316,6 +316,12 @@ class BookingFareCalculator {
     'BATANGAS GRAND TERMINAL',
   ];
 
+  static const List<int> bookingStationKms = [
+    0, 2, 3, 5, 6, 7, 9, 10, 11, 12, 14, 16, 18, 19, 20, 21, 23, 24, 25, 26, 
+    27, 29, 30, 32, 33, 35, 37, 38, 39, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 
+    52, 53, 54, 55, 56, 58, 60, 62, 64, 65, 66, 67, 69, 70, 70, 70
+  ];
+
   /// Calculate fare based on booking station names
   /// Returns the fare amount based on passenger type and distance
   static int calculateFare({
@@ -336,8 +342,10 @@ class BookingFareCalculator {
       return 0;
     }
 
-    // Calculate KM distance
-    final kmTraveled = (originIndex - destIndex).abs();
+    // Calculate KM distance using mapped km values, NOT array indices difference
+    final originKm = bookingStationKms[originIndex];
+    final destKm = bookingStationKms[destIndex];
+    final kmTraveled = (originKm - destKm).abs();
 
     // Get fare entry for this distance
     final fareEntry = FareTable.getEntryByKm(kmTraveled);
