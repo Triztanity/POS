@@ -50,16 +50,21 @@ class InspectorNFCHandler {
           });
         }
 
+        final isHomeRoot = (_navigatorKey?.currentState != null)
+            ? !_navigatorKey!.currentState!.canPop()
+            : false;
+
+        // Accept inspector card only from home screen context.
         if (role.toLowerCase() == 'inspector' &&
             isLoggedIn &&
             isOnHomeScreen &&
-            isTopRouteFirst) {
+            (isTopRouteFirst || isHomeRoot)) {
           debugPrint(
-              '[INSPECTOR-HANDLER] Inspector card detected! Name=$name, attempting navigation');
+              '[INSPECTOR-HANDLER] Inspector card detected! Name=$name, attempting navigation (topRouteFirst=$isTopRouteFirst, isHomeRoot=$isHomeRoot)');
           _navigateToInspector();
         } else if (role.toLowerCase() == 'inspector') {
           debugPrint(
-              '[INSPECTOR-HANDLER] Inspector card ignored: logged_in=$isLoggedIn, screen=${AppState.instance.currentScreen}');
+              '[INSPECTOR-HANDLER] Inspector card ignored: logged_in=$isLoggedIn, screen=${AppState.instance.currentScreen}, topRouteFirst=$isTopRouteFirst, isHomeRoot=$isHomeRoot');
         } else {
           debugPrint('[INSPECTOR-HANDLER] Non-inspector card, role=$role');
         }
