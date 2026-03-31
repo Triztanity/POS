@@ -15,6 +15,7 @@ import '../services/device_config_service.dart';
 import '../services/nfc_reader_mode_service.dart';
 import '../services/sms_booking_alert_service.dart';
 import '../services/qr_validation_service.dart';
+import '../services/rtdb_occupancy_publisher_service.dart';
 import '../local_storage.dart';
 import '../main.dart' show navigatorKey;
 import '../utils/dialogs.dart';
@@ -68,6 +69,13 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() => _assignedBus = bus);
       }
       await _refreshActiveScheduleContext();
+      // Start RTDB occupancy publisher after schedule context is ready
+      if (bus != null && bus.isNotEmpty) {
+        RtdbOccupancyPublisherService().start(
+          busNumber: bus,
+          routeDirection: routeDirection,
+        );
+      }
     });
 
     _initActiveBookingAlerts();
@@ -461,6 +469,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _bookingAlertSub?.cancel();
+    // Stop RTDB publisher when home screen is disposed
+    RtdbOccupancyPublisherService().stop();
     super.dispose();
   }
 
