@@ -110,7 +110,7 @@ class _AfcsAppState extends State<AfcsApp> {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: "AFCS POS",
+      title: "StarExpress POS",
       navigatorKey: navigatorKey,
       home: const SplashScreen(),
       routes: {

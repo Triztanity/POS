@@ -305,7 +305,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'AFCS POS',
+                  'StarExpress POS',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,

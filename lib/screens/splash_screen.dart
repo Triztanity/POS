@@ -161,7 +161,7 @@ class _SplashScreenState extends State<SplashScreen> {
           children: [
             const SizedBox(height: 40),
             Text(
-              'AFCS POS',
+              'StarExpress POS',
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: Colors.green[700],

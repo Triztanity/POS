@@ -14,9 +14,9 @@
         android:required="false" />
 
     <application
-        android:label="untitled"
+        android:label="StarExpress POS"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/launcher_icon">
 
         <activity
             android:name=".MainActivity"
