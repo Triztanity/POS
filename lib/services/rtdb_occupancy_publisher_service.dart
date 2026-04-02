@@ -65,6 +65,9 @@ class RtdbOccupancyPublisherService {
       rtdbBaseUrl: _rtdbBaseUrl,
     );
 
+    // Clean up any legacy wrong-format occupancy nodes (e.g. BUS_1 from old bug)
+    await _cleanLegacyOccupancyNodes(busNumber);
+
     // Publish immediately, then on 30-second schedule
     await _publishNow();
     _timer = Timer.periodic(_publishInterval, (_) => _publishNow());
@@ -78,6 +81,53 @@ class RtdbOccupancyPublisherService {
     _running = false;
     await RtdbGpsListenerService().stopListening();
     debugPrint('[OccupancyPublisher] Stopped.');
+  }
+
+  // ─── Legacy node cleanup ───
+
+  /// Delete any wrong-format occupancy RTDB nodes that were created before the
+  /// bus-ID fix (e.g. BUS_1 instead of BUS_01). Runs silently once on start.
+  Future<void> _cleanLegacyOccupancyNodes(String busNumber) async {
+    try {
+      final canonical = RtdbGpsListenerService.busNumberToRtdbId(busNumber);
+      // Build all known wrong-format variants to check and delete
+      final legacyCandidates = _legacyRtdbIds(busNumber)
+          .where((id) => id != canonical)
+          .toList();
+
+      if (legacyCandidates.isEmpty) return;
+
+      final db = FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: _rtdbBaseUrl,
+      );
+
+      for (final legacyId in legacyCandidates) {
+        final ref = db.ref('occupancy/$legacyId');
+        final snap = await ref.get();
+        if (snap.exists) {
+          await ref.remove();
+          debugPrint('[OccupancyPublisher] Removed legacy node: occupancy/$legacyId');
+        }
+      }
+    } catch (e) {
+      debugPrint('[OccupancyPublisher] Legacy cleanup skipped: $e');
+    }
+  }
+
+  /// Generate all known wrong-format RTDB IDs for a given bus number.
+  static List<String> _legacyRtdbIds(String busNumber) {
+    final normalized = busNumber.trim().toUpperCase().replaceAll('-', '_');
+    final match = RegExp(r'^BUS_0*(\d+)$').firstMatch(normalized);
+    if (match == null) return [];
+    final num = int.tryParse(match.group(1) ?? '0') ?? 0;
+    return [
+      'BUS_$num',                              // BUS_1  (stripped zeros, old bug)
+      'BUS_${num.toString().padLeft(3, '0')}', // BUS_001 (3-digit, over-padded)
+      'BUS${num.toString().padLeft(2, '0')}',  // BUS01  (no underscore)
+      'BUS$num',                               // BUS1   (no underscore + stripped)
+      normalized,                              // BUS_001 (raw before trimming)
+    ];
   }
 
   void updateRouteDirection(String direction) {
