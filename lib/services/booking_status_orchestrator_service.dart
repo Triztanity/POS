@@ -185,24 +185,26 @@ class BookingStatusOrchestratorService {
       final updates = <String, dynamic>{
         'status': status,
         'updatedAt': FieldValue.serverTimestamp(),
-        'lastStatusEventId': eventId,
-        'lastUpdateSource': 'pos-firebase',
+        // Keep booking schema aligned with SMS path by removing legacy metadata keys.
+        'lastStatusEventId': FieldValue.delete(),
+        'lastUpdateSource': FieldValue.delete(),
         if (tripId.isNotEmpty) 'tripId': tripId,
         if (passengerUid.isNotEmpty) 'userId': passengerUid,
         if (dropoffTimestamp.isNotEmpty) 'dropoffTimestamp': dropoffTimestamp,
       };
 
       if (status == 'on-board') {
-        return _moveToBookings(bookingId, updates);
+        return _moveToBookings(bookingId, updates, eventId);
       }
       if (status == 'dropped-off') {
-        return _moveToArchive(bookingId, updates);
+        return _moveToArchive(bookingId, updates, eventId);
       }
 
       return _updateInFirstFound(
         bookingId,
         ['bookings_new', 'bookings', 'bookings_archive'],
         updates,
+        eventId,
       );
     } catch (e) {
       debugPrint('[BookingStatus] Firestore update error: $e');
@@ -213,13 +215,13 @@ class BookingStatusOrchestratorService {
   Future<bool> _moveToBookings(
     String bookingId,
     Map<String, dynamic> updates,
+    String eventId,
   ) async {
     final fromNew =
         await _firestore.collection('bookings_new').doc(bookingId).get();
     if (fromNew.exists) {
       final current = fromNew.data() ?? <String, dynamic>{};
-      if ((current['lastStatusEventId'] ?? '').toString() ==
-          (updates['lastStatusEventId'] ?? '').toString()) {
+      if (_isDuplicateEvent(current, eventId)) {
         return true;
       }
 
@@ -243,19 +245,20 @@ class BookingStatusOrchestratorService {
       bookingId,
       ['bookings', 'bookings_archive'],
       updates,
+      eventId,
     );
   }
 
   Future<bool> _moveToArchive(
     String bookingId,
     Map<String, dynamic> updates,
+    String eventId,
   ) async {
     final fromBookings =
         await _firestore.collection('bookings').doc(bookingId).get();
     if (fromBookings.exists) {
       final current = fromBookings.data() ?? <String, dynamic>{};
-      if ((current['lastStatusEventId'] ?? '').toString() ==
-          (updates['lastStatusEventId'] ?? '').toString()) {
+      if (_isDuplicateEvent(current, eventId)) {
         return true;
       }
 
@@ -279,6 +282,9 @@ class BookingStatusOrchestratorService {
         await _firestore.collection('bookings_new').doc(bookingId).get();
     if (fromNew.exists) {
       final current = fromNew.data() ?? <String, dynamic>{};
+      if (_isDuplicateEvent(current, eventId)) {
+        return true;
+      }
       final batch = _firestore.batch();
       final target = _firestore.collection('bookings_archive').doc(bookingId);
       batch.set(
@@ -299,6 +305,7 @@ class BookingStatusOrchestratorService {
       bookingId,
       ['bookings_archive'],
       updates,
+      eventId,
     );
   }
 
@@ -306,6 +313,7 @@ class BookingStatusOrchestratorService {
     String bookingId,
     List<String> collections,
     Map<String, dynamic> updates,
+    String eventId,
   ) async {
     for (final name in collections) {
       final ref = _firestore.collection(name).doc(bookingId);
@@ -313,8 +321,7 @@ class BookingStatusOrchestratorService {
       if (!snap.exists) continue;
 
       final current = snap.data() ?? <String, dynamic>{};
-      if ((current['lastStatusEventId'] ?? '').toString() ==
-          (updates['lastStatusEventId'] ?? '').toString()) {
+      if (_isDuplicateEvent(current, eventId)) {
         return true;
       }
 
@@ -323,6 +330,12 @@ class BookingStatusOrchestratorService {
     }
 
     return false;
+  }
+
+  bool _isDuplicateEvent(Map<String, dynamic> current, String eventId) {
+    if (eventId.isEmpty) return false;
+    final currentEventId = (current['lastStatusEventId'] ?? '').toString();
+    return currentEventId.isNotEmpty && currentEventId == eventId;
   }
 
   Future<bool> _isOnline() async {

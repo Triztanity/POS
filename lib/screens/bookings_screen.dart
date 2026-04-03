@@ -337,29 +337,6 @@ class _BookingsScreenState extends State<BookingsScreen> {
     final previousStatus = booking.status;
     final previousDropoffTimestamp = booking.dropoffTimestamp;
     try {
-      // Show confirmation dialog
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Confirm Drop-off'),
-          content: Text('Mark ${booking.passengerName} as dropped-off?\n\n'
-              'Booking ID: ${booking.id}\n'
-              'Time: ${DateTime.now().toString().split('.')[0]}'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Confirm'),
-            ),
-          ],
-        ),
-      );
-
-      if (confirm != true) return;
-
       // Update local state
       booking.status = 'dropped-off';
       booking.dropoffTimestamp = DateTime.now().toString();
@@ -367,12 +344,6 @@ class _BookingsScreenState extends State<BookingsScreen> {
 
       // Immediately refresh UI to reflect dropped-off status
       if (mounted) setState(() {});
-
-      // Send status update via Firebase first, then SMS fallback if needed.
-      if (mounted) {
-        await Dialogs.showMessage(
-            context, 'Sending', 'Sending status update...');
-      }
 
       final result = await BookingStatusOrchestratorService().updateStatus(
         bookingId: booking.id,

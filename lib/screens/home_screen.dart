@@ -106,7 +106,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final localSchedule = LocalStorage.getAcceptedSchedule();
     if (localSchedule != null) {
       final localKey = LocalStorage.getAcceptedScheduleTimeKey();
-      final routeStr = (localSchedule['route'] ?? localSchedule['routeName'] ?? '').toString();
+      final routeStr =
+          (localSchedule['route'] ?? localSchedule['routeName'] ?? '')
+              .toString();
       final derivedDirection = _deriveRouteDirectionFromText(routeStr);
       if (localKey.isNotEmpty && mounted) {
         setState(() {
@@ -148,7 +150,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final data = query.docs.first.data();
       // Debug: log all keys present in the schedule document
-      debugPrint('[HomeScreen] Firebase schedule doc keys: ${data.keys.toList()}');
+      debugPrint(
+          '[HomeScreen] Firebase schedule doc keys: ${data.keys.toList()}');
 
       final rawScheduleTime = data['ScheduledTimeStr'] ??
           data['scheduledTimeStr'] ??
@@ -160,10 +163,12 @@ class _HomeScreenState extends State<HomeScreen> {
           data['schedule_time'] ??
           data['dispatchTime'];
 
-      debugPrint('[HomeScreen] Firebase rawScheduleTime: $rawScheduleTime (${rawScheduleTime?.runtimeType})');
+      debugPrint(
+          '[HomeScreen] Firebase rawScheduleTime: $rawScheduleTime (${rawScheduleTime?.runtimeType})');
 
       final activeScheduleKey = _normalizeScheduleKey(rawScheduleTime);
-      debugPrint('[HomeScreen] Firebase normalized activeScheduleKey: "$activeScheduleKey"');
+      debugPrint(
+          '[HomeScreen] Firebase normalized activeScheduleKey: "$activeScheduleKey"');
 
       final routeStr = (data['route'] ?? data['routeName'] ?? '').toString();
       final derivedDirection = _deriveRouteDirectionFromText(routeStr);
@@ -216,7 +221,8 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
     } catch (e) {
-      debugPrint('[HomeScreen] Firebase schedule refresh error (non-fatal): $e');
+      debugPrint(
+          '[HomeScreen] Firebase schedule refresh error (non-fatal): $e');
       // Non-fatal — local schedule is still valid
     }
   }
@@ -876,7 +882,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 (item['origin'] ?? 'Unknown origin').toString(),
               );
               final seats = (item['seats'] ?? 0).toString();
-              final bookingId = (item['bookingId'] ?? '').toString().trim();
 
               return Container(
                 margin: EdgeInsets.only(top: screenH * 0.007),
@@ -924,14 +929,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
-                          if (bookingId.isNotEmpty)
-                            Text(
-                              'ID: $bookingId',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[700],
-                              ),
-                            ),
                         ],
                       ),
                     ),
