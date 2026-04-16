@@ -60,7 +60,7 @@ class RouteValidator {
     'CITIMART BAUAN',
     'SAN ANTONIO',
     'SAN PASCUAL',
-    'STA. RITA BRGY. HALL COMPLEX',
+    'STA. RITA BRGY. HALL',
     'COMPLEX',
     'DIVERSION NTC',
     'BATANGAS GRAND TERMINAL',
