@@ -31,7 +31,7 @@ class RouteValidationService {
     'Sinisian Elem. School',
     'Mataas na Bayan Brgy. Hall',
     'Mahayahay 7 11',
-    'Matingain Mall na Poon',
+    'Matingain Mahal na Poon',
     'Bukal The Black Tea Project',
     'Tubigan Ice Plant',
     'Malinis Wilcon Depot',
@@ -82,7 +82,8 @@ class RouteValidationService {
 
     // Fallback: substring match (if partial name provided)
     int partialIndex = stationSequence.indexWhere(
-      (s) => _normalizeStationName(s).contains(normalized) ||
+      (s) =>
+          _normalizeStationName(s).contains(normalized) ||
           normalized.contains(_normalizeStationName(s)),
     );
     return partialIndex >= 0 ? partialIndex : -1;
@@ -95,7 +96,8 @@ class RouteValidationService {
   static ValidationResult validateRouteDirection(
     int originIndex,
     int destinationIndex,
-    String routeDirection, // 'North' or 'South' (or 'north_to_south' / 'south_to_north')
+    String
+        routeDirection, // 'North' or 'South' (or 'north_to_south' / 'south_to_north')
   ) {
     // Normalize route direction
     final normalized = routeDirection.toLowerCase();
@@ -126,7 +128,8 @@ class RouteValidationService {
   /// For now, destinations come from the fare table / home_screen dropdown.
   /// This is a placeholder; in production, this should be populated from
   /// the actual dropdown list used on home_screen.
-  static bool isValidDestination(String? destination, List<String> availableDestinations) {
+  static bool isValidDestination(
+      String? destination, List<String> availableDestinations) {
     if (destination == null || destination.isEmpty) return false;
     final norm = _normalizeStationName(destination);
     return availableDestinations.any(

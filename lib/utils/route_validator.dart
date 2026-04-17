@@ -1,11 +1,11 @@
 /// Route Validator
 /// Provides direction-aware validation for passenger routes based on the master station list.
-/// The list is ordered from Nasugbu Terminal → Batangas Grand Terminal.
+/// The list is ordered from Nasugbu Terminal → Batangas Terminal.
 /// For South routes, the list is reversed automatically.
 library;
 
 class RouteValidator {
-  /// Master station list ordered from Nasugbu → Batangas Grand Terminal
+  /// Master station list ordered from Nasugbu → Batangas Terminal
   /// Based on the official booking system station list
   static const List<String> northStations = [
     'NASUGBU TERMINAL',
@@ -22,7 +22,7 @@ class RouteValidator {
     'OBISPO',
     'BRGY PUTOL WAITING SHED',
     'BRGY GUINHAWA WAITING SHED',
-    'FLYING V MUNITING TUBIG',
+    'FLYING V MUNTING TUBIG',
     'BRGY. HALL LANATAN',
     'BALAYAN WALTERMART',
     'SPYDER FUEL GUMAMELA',
@@ -37,7 +37,7 @@ class RouteValidator {
     'SINISIAN ELEM. SCHOOL',
     'MATAAS NA BAYAN BRGY. HALL',
     'MAHAYAHAY 7 11',
-    'MATINGAIN MALL NA POON',
+    'MATINGAIN MAHAL NA POON',
     'BUKAL THE BLACK TEA PROJECT',
     'TUBIGAN ICE PLANT',
     'MALINIS WILCON DEPOT',
@@ -63,7 +63,7 @@ class RouteValidator {
     'STA. RITA BRGY. HALL',
     'COMPLEX',
     'DIVERSION NTC',
-    'BATANGAS GRAND TERMINAL',
+    'BATANGAS TERMINAL',
   ];
 
   /// Get the appropriate station list for the given route direction
@@ -103,13 +103,16 @@ class RouteValidator {
     // Handle common aliases/variations
     final aliases = {
       'NASUGBU': 'NASUGBU TERMINAL',
-      'BATANGAS': 'BATANGAS GRAND TERMINAL',
-      'BATANGAS TERMINAL': 'BATANGAS GRAND TERMINAL',
-      'BATANGAS GRAND': 'BATANGAS GRAND TERMINAL',
+      'BATANGAS': 'BATANGAS TERMINAL',
+      'BATANGAS TERMINAL': 'BATANGAS TERMINAL',
+      'BATANGAS GRAND': 'BATANGAS TERMINAL',
+      'BATANGAS GRAND TERMINAL': 'BATANGAS TERMINAL',
       'IRRIGATION': 'IRRIGATION WAITING SHED/TODA',
       'PALICO': 'PALICO TERMINAL',
       'PAHINANTE': 'PAHINANTE WAITING SHED',
       'BILARAN': 'BILARAN ELEM SCHOOL WAITING SHED',
+      'FLYING V MUNITING TUBIG': 'FLYING V MUNTING TUBIG',
+      'MATINGAIN MALL NA POON': 'MATINGAIN MAHAL NA POON',
       'PAG ASA PANTAY': 'ALFAMART PANTAY',
       'PAG-ASA-PANTAY': 'ALFAMART PANTAY',
       'PAGASA-PANTAY': 'ALFAMART PANTAY',
@@ -121,9 +124,10 @@ class RouteValidator {
       'TAWILISAN': 'TAWILISAN 7 11',
       'MAHAYAHAY': 'MAHAYAHAY 7 11',
       'MATAAS': 'MATAAS NA BAYAN BRGY. HALL',
-      'STA RITA': 'STA. RITA BRGY. HALL COMPLEX',
-      'STA. RITA': 'STA. RITA BRGY. HALL COMPLEX',
-      'STA. RITA BRGY HALL': 'STA. RITA BRGY. HALL COMPLEX',
+      'STA RITA': 'STA. RITA BRGY. HALL',
+      'STA. RITA': 'STA. RITA BRGY. HALL',
+      'STA. RITA BRGY HALL': 'STA. RITA BRGY. HALL',
+      'STA RITA BRGY HALL COMPLEX': 'STA. RITA BRGY. HALL',
     };
 
     if (aliases.containsKey(normalized)) {

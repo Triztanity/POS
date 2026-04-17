@@ -275,7 +275,7 @@ class BookingFareCalculator {
     'OBISPO',
     'BRGY PUTOL WAITING SHED',
     'BRGY GUINHAWA WAITING SHED',
-    'FLYING V MUNITING TUBIG',
+    'FLYING V MUNTING TUBIG',
     'BRGY. HALL LANATAN',
     'BALAYAN WALTERMART',
     'SPYDER FUEL GUMAMELA',
@@ -290,7 +290,7 @@ class BookingFareCalculator {
     'SINISIAN ELEM. SCHOOL',
     'MATAAS NA BAYAN BRGY. HALL',
     'MAHAYAHAY 7 11',
-    'MATINGAIN MALL NA POON',
+    'MATINGAIN MAHAL NA POON',
     'BUKAL THE BLACK TEA PROJECT',
     'TUBIGAN ICE PLANT',
     'MALINIS WILCON DEPOT',
@@ -316,7 +316,7 @@ class BookingFareCalculator {
     'STA. RITA BRGY. HALL',
     'COMPLEX',
     'DIVERSION NTC',
-    'BATANGAS GRAND TERMINAL',
+    'BATANGAS TERMINAL',
   ];
 
   static const List<int> bookingStationKms = [
