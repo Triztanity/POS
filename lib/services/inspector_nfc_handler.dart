@@ -13,6 +13,7 @@ class InspectorNFCHandler {
   StreamSubscription? _nfcSub;
   GlobalKey<NavigatorState>? _navigatorKey;
   bool _initialized = false;
+  Timer? _healthCheckTimer;
 
   /// Initialize the handler with the global navigator key
   void initialize(GlobalKey<NavigatorState> navigatorKey) {
@@ -71,8 +72,38 @@ class InspectorNFCHandler {
       },
       onError: (error) {
         debugPrint('[INSPECTOR-HANDLER] Stream error: $error');
+        // Stream died — schedule immediate re-subscribe
+        _scheduleResubscribe();
+      },
+      onDone: () {
+        debugPrint('[INSPECTOR-HANDLER] Stream closed unexpectedly — will re-subscribe');
+        _scheduleResubscribe();
       },
     );
+
+    // Start a periodic health check: every 60s, verify the NFC stream is alive.
+    // If the subscription got cancelled/errored silently, re-initialize.
+    _healthCheckTimer?.cancel();
+    _healthCheckTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (_nfcSub == null && _initialized) {
+        debugPrint('[INSPECTOR-HANDLER] Health check: stream dead, re-subscribing');
+        _initialized = false;
+        initialize(_navigatorKey!);
+      }
+    });
+  }
+
+  /// Re-subscribe after a short delay when the stream dies unexpectedly.
+  void _scheduleResubscribe() {
+    _nfcSub?.cancel();
+    _nfcSub = null;
+    Future.delayed(const Duration(seconds: 2), () {
+      if (_navigatorKey != null) {
+        debugPrint('[INSPECTOR-HANDLER] Re-subscribing to NFC stream');
+        _initialized = false;
+        initialize(_navigatorKey!);
+      }
+    });
   }
 
   void _navigateToInspector() {
@@ -109,6 +140,8 @@ class InspectorNFCHandler {
 
   void dispose() {
     debugPrint('[INSPECTOR-HANDLER] Disposing');
+    _healthCheckTimer?.cancel();
+    _healthCheckTimer = null;
     _nfcSub?.cancel();
     _nfcSub = null;
     _initialized = false;
