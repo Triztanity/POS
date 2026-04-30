@@ -83,6 +83,38 @@ class RtdbOccupancyPublisherService {
     debugPrint('[OccupancyPublisher] Stopped.');
   }
 
+  /// Publish a final zero-count update on arrival, then fully stop the publisher.
+  /// Call this from the arrival report flow before clearing sessions.
+  Future<void> publishArrival() async {
+    if (_busNumber == null) return;
+
+    try {
+      final gps = RtdbGpsListenerService();
+      final stationName = gps.currentStationName;
+
+      final payload = <String, dynamic>{
+        'busNumber': _busNumber,
+        'currentStation': stationName,
+        'onBoardCount': 0,
+        'updatedAt': DateTime.now().toIso8601String(),
+      };
+
+      final rtdbId = RtdbGpsListenerService.busNumberToRtdbId(_busNumber!);
+      final db = FirebaseDatabase.instanceFor(
+        app: Firebase.app(),
+        databaseURL: _rtdbBaseUrl,
+      );
+      final ref = db.ref('occupancy/$rtdbId');
+      await ref.set(payload);
+
+      debugPrint('[OccupancyPublisher] Arrival published → station: $stationName, onBoard: 0');
+    } catch (e) {
+      debugPrint('[OccupancyPublisher] Arrival publish error (non-fatal): $e');
+    }
+
+    await stop();
+  }
+
   // ─── Legacy node cleanup ───
 
   /// Delete any wrong-format occupancy RTDB nodes that were created before the

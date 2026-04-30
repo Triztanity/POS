@@ -28,7 +28,7 @@ class BookingConfirmationScreen extends StatefulWidget {
 class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
   String? selectedPassengerType;
   late int passengerCount;
-  late List<String> selectedPassengerTypes;
+  late List<String?> selectedPassengerTypes;
   late List<double> perSeatFares;
   late double originalFare;
   double discountAmount = 0;
@@ -51,8 +51,8 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
     passengerCount = widget.qrData.numberOfPassengers > 0
         ? widget.qrData.numberOfPassengers
         : 1;
-    selectedPassengerTypes = List.filled(passengerCount, 'REGULAR');
-    selectedPassengerType = selectedPassengerTypes.first;
+    selectedPassengerTypes = List.filled(passengerCount, null);
+    selectedPassengerType = null;
     perSeatFares = List.filled(passengerCount, 0.0);
     _updateFare();
   }
@@ -75,7 +75,7 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
     ).toDouble();
 
     perSeatFares = selectedPassengerTypes.map((type) {
-      final normalized = type.trim().toUpperCase();
+      final normalized = (type ?? 'REGULAR').trim().toUpperCase();
       return BookingFareCalculator.calculateFare(
         origin: normalizedOrigin,
         destination: normalizedDestination,
@@ -188,6 +188,8 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                                   isExpanded: true,
                                   underline: const SizedBox(),
                                   value: selectedPassengerTypes[index],
+                                  hint: const Text('Select Type',
+                                      style: TextStyle(color: Colors.grey)),
                                   items: passengerTypes
                                       .map((type) => DropdownMenuItem(
                                             value: type,
@@ -352,7 +354,7 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                   width: double.infinity,
                   height: screenH * 0.055,
                   child: ElevatedButton(
-                    onPressed: selectedPassengerType == null
+                    onPressed: selectedPassengerTypes.any((t) => t == null)
                         ? null
                         : () async {
                             // Queue on-board status for Raspberry Pi gateway
@@ -375,8 +377,8 @@ class _BookingConfirmationScreenState extends State<BookingConfirmationScreen> {
                               // Optionally show error dialog
                             }
                             Navigator.pop(context, {
-                              'passengerType': selectedPassengerType!,
-                              'passengerTypes': selectedPassengerTypes,
+                              'passengerType': selectedPassengerType ?? 'REGULAR',
+                              'passengerTypes': selectedPassengerTypes.map((e) => e ?? 'REGULAR').toList(),
                               'perSeatFares': perSeatFares,
                               'originalFare': originalFare,
                               'discountAmount': discountAmount,

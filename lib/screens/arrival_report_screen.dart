@@ -11,6 +11,7 @@ import '../utils/fare_calculator.dart';
 import 'login_screen.dart';
 import 'records_screen.dart';
 import '../services/app_state.dart';
+import '../services/rtdb_occupancy_publisher_service.dart';
 import '../utils/dialogs.dart';
 
 class ArrivalReportScreen extends StatefulWidget {
@@ -457,10 +458,11 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
                       onPressed: () async {
                         final ok = await _printArrivalReport(context);
                         if (ok && mounted) {
-                          Navigator.pushReplacement(
+                          Navigator.pushAndRemoveUntil(
                             context,
                             MaterialPageRoute(
                                 builder: (_) => const LoginScreen()),
+                            (route) => false,
                           );
                         }
                       },
@@ -859,6 +861,9 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
                 context, 'Uploaded', 'Arrival report uploaded');
           }
         }
+
+        // Publish final zero-count occupancy update to RTDB
+        await RtdbOccupancyPublisherService().publishArrival();
 
         // Finalize current trip locally to mark it complete
         await LocalStorage.finalizeTrip(tripId);
