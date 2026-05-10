@@ -16,7 +16,9 @@ void main() {
       );
     }
 
-    testWidgets('Single passenger REGULAR with mismatched QR fare ignores QR fare', (WidgetTester tester) async {
+    testWidgets(
+        'Single passenger REGULAR with mismatched QR fare ignores QR fare',
+        (WidgetTester tester) async {
       final qrData = QRData(
         bookingId: 'B1',
         userId: 'U1',
@@ -35,17 +37,20 @@ void main() {
       await tester.pumpAndSettle();
 
       // Original fare should be 25.0, final fare 25.0
-      expect(find.text('₱25.00'), findsNWidgets(2)); // Original Fare and Final Fare
+      expect(find.text('₱25.00'),
+          findsNWidgets(2)); // Original Fare and Final Fare
     });
 
-    testWidgets('Single passenger discounted type should match route table discounted fare', (WidgetTester tester) async {
+    testWidgets(
+        'Single passenger discounted type should match route table discounted fare',
+        (WidgetTester tester) async {
       final qrData = QRData(
         bookingId: 'B2',
         userId: 'U2',
         transactionId: 'T2',
         origin: 'NASUGBU TERMINAL',
-        destination: 'LIAN SHED', 
-        fareAmount: 20.0, 
+        destination: 'LIAN SHED',
+        fareAmount: 20.0,
         assignedBusNumber: 'BUS001',
         passengerName: 'Student Doe',
         numberOfPassengers: 1,
@@ -59,10 +64,11 @@ void main() {
       // Original fare 25.0 as it defaults to REGULAR
       expect(find.text('₱25.00'), findsNWidgets(2));
 
-      // Open Dropdown
-      await tester.tap(find.text('REGULAR'));
+      // Open dropdown. Single-passenger bookings render a Select Type hint while
+      // fare calculations default to REGULAR until the conductor chooses a type.
+      await tester.tap(find.byType(DropdownButton<String>));
       await tester.pumpAndSettle();
-      
+
       // Select STUDENT (the last one usually is the dropdown item)
       await tester.tap(find.text('STUDENT').last);
       await tester.pumpAndSettle();
@@ -73,13 +79,14 @@ void main() {
       expect(find.text('-₱5.00'), findsOneWidget); // Discount
     });
 
-    testWidgets('Multi-passenger mixed types should compute per seat then sum', (WidgetTester tester) async {
+    testWidgets('Multi-passenger mixed types should compute per seat then sum',
+        (WidgetTester tester) async {
       final qrData = QRData(
         bookingId: 'B3',
         userId: 'U3',
         transactionId: 'T3',
         origin: 'NASUGBU TERMINAL',
-        destination: 'LIAN SHED', 
+        destination: 'LIAN SHED',
         fareAmount: 50.0,
         assignedBusNumber: 'BUS001',
         passengerName: 'Family',
@@ -97,7 +104,7 @@ void main() {
       // Change passenger 2 to STUDENT
       final dropdowns = find.byType(DropdownButton<String>);
       expect(dropdowns, findsNWidgets(2));
-      
+
       await tester.tap(dropdowns.last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('STUDENT').last);
@@ -109,13 +116,14 @@ void main() {
       expect(find.text('-₱5.00'), findsOneWidget); // Discount
     });
 
-    testWidgets('Multi-passenger all REGULAR should ignore inflated QR fare', (WidgetTester tester) async {
+    testWidgets('Multi-passenger all REGULAR should ignore inflated QR fare',
+        (WidgetTester tester) async {
       final qrData = QRData(
         bookingId: 'B4',
         userId: 'U4',
         transactionId: 'T4',
         origin: 'NASUGBU TERMINAL',
-        destination: 'LIAN SHED', 
+        destination: 'LIAN SHED',
         fareAmount: 1000.0, // Inflated
         assignedBusNumber: 'BUS001',
         passengerName: 'Group',

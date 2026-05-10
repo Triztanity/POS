@@ -127,6 +127,74 @@ class FirebaseDispatchService {
     }
   }
 
+  /// Mark the current schedule as arrived after the POS prints the arrival report.
+  Future<bool> markScheduleArrived({String? tripId}) async {
+    try {
+      final posAuth = POSDeviceAuthService();
+      final authenticated = await posAuth.ensureSignedInWithPosRole();
+      if (!authenticated) {
+        print(
+            '⚠️ POS device not authenticated to Firebase. Cannot mark schedule arrived.');
+        return false;
+      }
+
+      final resolvedTripId = (tripId ?? LocalStorage.getCurrentTripId()).trim();
+      if (resolvedTripId.isEmpty) {
+        print('⚠️ No current tripId set in local storage.');
+        return false;
+      }
+
+      var docRef = _firestore.collection('schedules').doc(resolvedTripId);
+      var snapshot = await docRef.get();
+
+      if (!snapshot.exists) {
+        final query = await _firestore
+            .collection('schedules')
+            .where('tripId', isEqualTo: resolvedTripId)
+            .limit(1)
+            .get();
+        if (query.docs.isEmpty) {
+          print('⚠️ No schedule found for tripId $resolvedTripId');
+          return false;
+        }
+        snapshot = query.docs.first;
+        docRef = snapshot.reference;
+      }
+
+      final data = snapshot.data() ?? <String, dynamic>{};
+      final status = (data['status'] ?? '').toString().toLowerCase();
+      if (status == 'arrived') {
+        print('✅ Schedule already arrived for tripId=$resolvedTripId');
+        return true;
+      }
+      if (status == 'cancelled' || status == 'canceled') {
+        print(
+            '⚠️ Schedule is cancelled (status=$status); skip arrived update.');
+        return false;
+      }
+
+      if (status != 'departed' &&
+          status != 'dispatched' &&
+          status != 'in-progress') {
+        print(
+            '⚠️ Schedule is not active/departed (status=$status); skip arrived update.');
+        return false;
+      }
+
+      await docRef.update({
+        'status': 'arrived',
+        'arrivedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ Schedule marked arrived for tripId=$resolvedTripId');
+      return true;
+    } catch (e) {
+      print('❌ Failed to mark schedule arrived: $e');
+      return false;
+    }
+  }
+
   /// Create a `tripDetails` document when a POS uploads a trip dispatch.
   ///
   /// Fields written:

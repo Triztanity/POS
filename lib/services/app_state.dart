@@ -20,6 +20,8 @@ class AppState {
   Map<String, dynamic>? get pendingDriver => _pendingDriver;
 
   StreamSubscription<Map<String, dynamic>>? _nfcSub;
+  final StreamController<String> _changesController =
+      StreamController<String>.broadcast();
   bool _inspectorModalActive = false;
   String _currentScreen = '';
   bool _tripCancelledLocked = false;
@@ -27,9 +29,17 @@ class AppState {
   bool get inspectorModalActive => _inspectorModalActive;
   String get currentScreen => _currentScreen;
   bool get tripCancelledLocked => _tripCancelledLocked;
+  Stream<String> get changes => _changesController.stream;
+
+  void _emitChange(String reason) {
+    if (!_changesController.isClosed) {
+      _changesController.add(reason);
+    }
+  }
 
   void setInspectorModalActive(bool v) {
     _inspectorModalActive = v;
+    _emitChange('inspector-modal');
   }
 
   void setCurrentScreen(String screen) {
@@ -40,11 +50,13 @@ class AppState {
   void setTripCancelledLocked(bool locked) {
     debugPrint('[APP-STATE] setTripCancelledLocked: $locked');
     _tripCancelledLocked = locked;
+    _emitChange('trip-cancelled-lock');
   }
 
   void setConductor(Map<String, dynamic>? conductor) {
     debugPrint('[APP-STATE] setConductor: ${conductor?['name']}');
     _conductor = conductor;
+    _emitChange('conductor');
   }
 
   void setDriver(Map<String, dynamic>? driver) {
@@ -56,6 +68,7 @@ class AppState {
     } else {
       LocalStorage.clearCurrentDriver();
     }
+    _emitChange('driver');
   }
 
   /// Start a global NFC listener that will register driver card taps application-wide.
@@ -69,6 +82,9 @@ class AppState {
       try {
         final role = (user['role'] ?? '').toString().toLowerCase();
         final uid = user['uid']?.toString();
+        if (_currentScreen == 'login_screen') {
+          return;
+        }
         if (role == 'driver') {
           final currentUid = _driver?['uid']?.toString();
           if (_driver == null) {
@@ -79,6 +95,7 @@ class AppState {
             debugPrint(
                 '[APP-STATE] global NFC: different driver tapped, setting pendingDriver');
             _pendingDriver = user;
+            _emitChange('pending-driver');
           } else {
             // same driver tapped again - ignore
           }
@@ -89,6 +106,7 @@ class AppState {
                 '[APP-STATE] dispatcher tapped, approving pending driver change');
             setDriver(_pendingDriver);
             _pendingDriver = null;
+            _emitChange('pending-driver-approved');
           }
         }
       } catch (e) {
@@ -108,5 +126,6 @@ class AppState {
     _driver = null;
     _pendingDriver = null;
     _tripCancelledLocked = false;
+    _emitChange('clear-session');
   }
 }

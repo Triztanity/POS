@@ -48,7 +48,8 @@ class RtdbOccupancyPublisherService {
     required String routeDirection,
   }) async {
     if (_running) {
-      debugPrint('[OccupancyPublisher] Already running — updating route direction.');
+      debugPrint(
+          '[OccupancyPublisher] Already running — updating route direction.');
       _routeDirection = routeDirection;
       RtdbGpsListenerService().updateRouteDirection(routeDirection);
       return;
@@ -72,7 +73,8 @@ class RtdbOccupancyPublisherService {
     await _publishNow();
     _timer = Timer.periodic(_publishInterval, (_) => _publishNow());
 
-    debugPrint('[OccupancyPublisher] Started for bus $busNumber (${routeDirection}).');
+    debugPrint(
+        '[OccupancyPublisher] Started for bus $busNumber (${routeDirection}).');
   }
 
   Future<void> stop() async {
@@ -107,7 +109,8 @@ class RtdbOccupancyPublisherService {
       final ref = db.ref('occupancy/$rtdbId');
       await ref.set(payload);
 
-      debugPrint('[OccupancyPublisher] Arrival published → station: $stationName, onBoard: 0');
+      debugPrint(
+          '[OccupancyPublisher] Arrival published → station: $stationName, onBoard: 0');
     } catch (e) {
       debugPrint('[OccupancyPublisher] Arrival publish error (non-fatal): $e');
     }
@@ -123,9 +126,8 @@ class RtdbOccupancyPublisherService {
     try {
       final canonical = RtdbGpsListenerService.busNumberToRtdbId(busNumber);
       // Build all known wrong-format variants to check and delete
-      final legacyCandidates = _legacyRtdbIds(busNumber)
-          .where((id) => id != canonical)
-          .toList();
+      final legacyCandidates =
+          _legacyRtdbIds(busNumber).where((id) => id != canonical).toList();
 
       if (legacyCandidates.isEmpty) return;
 
@@ -139,7 +141,8 @@ class RtdbOccupancyPublisherService {
         final snap = await ref.get();
         if (snap.exists) {
           await ref.remove();
-          debugPrint('[OccupancyPublisher] Removed legacy node: occupancy/$legacyId');
+          debugPrint(
+              '[OccupancyPublisher] Removed legacy node: occupancy/$legacyId');
         }
       }
     } catch (e) {
@@ -154,11 +157,11 @@ class RtdbOccupancyPublisherService {
     if (match == null) return [];
     final num = int.tryParse(match.group(1) ?? '0') ?? 0;
     return [
-      'BUS_$num',                              // BUS_1  (stripped zeros, old bug)
+      'BUS_$num', // BUS_1  (stripped zeros, old bug)
       'BUS_${num.toString().padLeft(3, '0')}', // BUS_001 (3-digit, over-padded)
-      'BUS${num.toString().padLeft(2, '0')}',  // BUS01  (no underscore)
-      'BUS$num',                               // BUS1   (no underscore + stripped)
-      normalized,                              // BUS_001 (raw before trimming)
+      'BUS${num.toString().padLeft(2, '0')}', // BUS01  (no underscore)
+      'BUS$num', // BUS1   (no underscore + stripped)
+      normalized, // BUS_001 (raw before trimming)
     ];
   }
 
@@ -207,6 +210,7 @@ class RtdbOccupancyPublisherService {
       // Compute on-board count (Phase 4 — read-only)
       final onBoardCount = RealtimeCountService.computeOnBoardCount(
         currentStationOrder: stationOrder,
+        currentStationName: stationName,
         routeDirection: _routeDirection,
       );
 

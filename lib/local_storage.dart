@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'services/app_state.dart';
 
-/// LocalStorage: simple Hive-based offline store for user records (UID -> user map)
-/// Schema (box 'employees') stores values as Map<String, dynamic>:
+/// LocalStorage: simple Hive-based offline store for user records (UID to user map)
+/// Schema (box 'employees') stores values as `Map<String, dynamic>`:
 /// {
 ///   'uid': 'ABC123',
 ///   'name': 'Juan Dela Cruz',
@@ -87,6 +87,8 @@ class LocalStorage {
   static const _scannedTicketsBox = 'scanned_tickets';
   static const _walkinsBox = 'walkins';
   static const _tripsBox = 'trips';
+  static const _fareTableEntriesBox = 'fare_table_entries';
+
   /// Durable anti-replay store: survives trip resets, session clears, app restarts (Phase 4)
   static const _consumedBookingsBox = 'consumed_bookings';
 
@@ -173,13 +175,25 @@ class LocalStorage {
     } else {
       debugPrint('[LocalStorage] Box $_tripsBox already open');
     }
+    if (!Hive.isBoxOpen(_fareTableEntriesBox)) {
+      try {
+        await Hive.openBox<Map>(_fareTableEntriesBox);
+        debugPrint('[LocalStorage] Opened box $_fareTableEntriesBox');
+      } catch (e) {
+        debugPrint(
+            '[LocalStorage] Error opening box $_fareTableEntriesBox: $e');
+      }
+    } else {
+      debugPrint('[LocalStorage] Box $_fareTableEntriesBox already open');
+    }
     // Durable anti-replay consumed bookings store (Phase 4)
     if (!Hive.isBoxOpen(_consumedBookingsBox)) {
       try {
         await Hive.openBox<Map>(_consumedBookingsBox);
         debugPrint('[LocalStorage] Opened box $_consumedBookingsBox');
       } catch (e) {
-        debugPrint('[LocalStorage] Error opening box $_consumedBookingsBox: $e');
+        debugPrint(
+            '[LocalStorage] Error opening box $_consumedBookingsBox: $e');
       }
     } else {
       debugPrint('[LocalStorage] Box $_consumedBookingsBox already open');
@@ -209,13 +223,9 @@ class LocalStorage {
       }
     }
 
-    // Seed known authorized UIDs (admin-provisioned). These are canonicalized
-    // and only added if missing. Update names/roles here as needed.
+    // Seed local-only roles. Conductor and driver cards are resolved from
+    // Firebase user_accounts during login and cached after successful lookup.
     final seeds = [
-      {'uid': '43:56:3F:06', 'name': 'Conductor A', 'role': 'conductor'},
-      {'uid': '6D:ED:43:06', 'name': 'Conductor B', 'role': 'conductor'},
-      {'uid': '4E:22:43:06', 'name': 'Driver A', 'role': 'driver'},
-      {'uid': 'EC:D5:41:06', 'name': 'Driver B', 'role': 'driver'},
       {'uid': '47:29:42:06', 'name': 'Dispatcher A', 'role': 'dispatcher'},
       {'uid': '69:64:3F:06', 'name': 'Dispatcher B', 'role': 'dispatcher'},
       {'uid': '05:91:41:06', 'name': 'Inspector', 'role': 'inspector'},
@@ -332,6 +342,65 @@ class LocalStorage {
   static Future<void> clearAll() async {
     final box = Hive.box<Map>(_boxName);
     await box.clear();
+  }
+
+  static Future<void> saveFareTableEntries(
+    List<Map<String, dynamic>> entries, {
+    DateTime? syncedAt,
+    String source = 'firestore',
+  }) async {
+    try {
+      final box = Hive.box<Map>(_fareTableEntriesBox);
+      final normalizedEntries = entries
+          .map((entry) => Map<String, dynamic>.from(entry))
+          .toList(growable: false);
+      await box.put('cache', {
+        'entries': normalizedEntries,
+        'lastSyncedAt': (syncedAt ?? DateTime.now()).toIso8601String(),
+        'source': source,
+        'entryCount': normalizedEntries.length,
+      });
+      debugPrint(
+          '[LocalStorage] Saved ${normalizedEntries.length} fare table entries');
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR saving fare table entries: $e');
+    }
+  }
+
+  static List<Map<String, dynamic>> loadFareTableEntries() {
+    try {
+      final box = Hive.box<Map>(_fareTableEntriesBox);
+      final raw = box.get('cache');
+      if (raw == null) return [];
+      final cache = Map<String, dynamic>.from(raw.cast<String, dynamic>());
+      final entries = cache['entries'];
+      if (entries is! List) return [];
+      return entries
+          .cast<Map>()
+          .map((entry) =>
+              Map<String, dynamic>.from(entry.cast<String, dynamic>()))
+          .toList();
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR loading fare table entries: $e');
+      return [];
+    }
+  }
+
+  static Map<String, dynamic>? getFareTableCacheMetadata() {
+    try {
+      final box = Hive.box<Map>(_fareTableEntriesBox);
+      final raw = box.get('cache');
+      if (raw == null) return null;
+      final cache = Map<String, dynamic>.from(raw.cast<String, dynamic>());
+      return {
+        'lastSyncedAt': cache['lastSyncedAt'],
+        'source': cache['source'],
+        'entryCount': cache['entryCount'],
+      };
+    } catch (e) {
+      debugPrint('[LocalStorage] ERROR loading fare table metadata: $e');
+      return null;
+    }
   }
 
   /// Bookings persistence per trip (saved to local storage for Firebase sync)
@@ -665,6 +734,18 @@ class LocalStorage {
     }
   }
 
+  static String? getStoredCurrentTripId() {
+    try {
+      final box = Hive.box<Map>(_sessionBox);
+      final session = box.get('sessionData');
+      if (session == null || session['currentTripId'] == null) return null;
+      final tripId = session['currentTripId'].toString().trim();
+      return tripId.isEmpty ? null : tripId;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<void> setCurrentTripId(String tripId) async {
     try {
       final box = Hive.box<Map>(_sessionBox);
@@ -981,7 +1062,8 @@ class LocalStorage {
   // ─── Durable Anti-Replay: Consumed Bookings (Phase 4) ───
 
   /// Mark a booking as consumed (permanently one-time). Survives trip resets and session clears.
-  static Future<void> markBookingConsumed(String bookingId, {String? tripId, String? busNumber}) async {
+  static Future<void> markBookingConsumed(String bookingId,
+      {String? tripId, String? busNumber}) async {
     try {
       final box = Hive.box<Map>(_consumedBookingsBox);
       await box.put(bookingId, {
@@ -1032,7 +1114,8 @@ class LocalStorage {
           Map<String, dynamic>.from(session?.cast<String, dynamic>() ?? {});
       newSession['activeScheduleTimeKey'] = scheduleTimeKey;
       await box.put('sessionData', newSession as Map);
-      debugPrint('[LocalStorage] Set active schedule time key: $scheduleTimeKey');
+      debugPrint(
+          '[LocalStorage] Set active schedule time key: $scheduleTimeKey');
     } catch (e) {
       debugPrint('[LocalStorage] ERROR setting active schedule time key: $e');
     }
@@ -1058,7 +1141,8 @@ class LocalStorage {
 
   /// Save the full accepted schedule Firestore document locally at dispatch time.
   /// This is the primary source for schedule metadata during the trip — no network needed.
-  static Future<void> saveAcceptedSchedule(Map<String, dynamic> scheduleData) async {
+  static Future<void> saveAcceptedSchedule(
+      Map<String, dynamic> scheduleData) async {
     try {
       final box = Hive.box<Map>(_sessionBox);
       // Convert Timestamp fields to ISO strings for safe Hive storage
@@ -1067,7 +1151,8 @@ class LocalStorage {
       // Also persist the normalized schedule time key immediately
       final scheduleTimeKey = _extractScheduleTimeKey(serializable);
       await setActiveScheduleTimeKey(scheduleTimeKey);
-      debugPrint('[LocalStorage] Saved accepted schedule. scheduleTimeKey: "$scheduleTimeKey"');
+      debugPrint(
+          '[LocalStorage] Saved accepted schedule. scheduleTimeKey: "$scheduleTimeKey"');
     } catch (e) {
       debugPrint('[LocalStorage] ERROR saving accepted schedule: $e');
     }
@@ -1114,7 +1199,8 @@ class LocalStorage {
     if (raw == null) return '';
     final text = raw.toString().trim();
     if (text.isEmpty) return '';
-    final dt = DateTime.tryParse(text) ?? DateTime.tryParse(text.replaceFirst(' ', 'T'));
+    final dt = DateTime.tryParse(text) ??
+        DateTime.tryParse(text.replaceFirst(' ', 'T'));
     if (dt != null) {
       final local = dt.toLocal();
       return '${local.year.toString().padLeft(4, '0')}-'
@@ -1140,7 +1226,8 @@ class LocalStorage {
           result[k] = v.toString();
         }
       } else if (v is Map) {
-        result[k] = _serializeScheduleMap(Map<String, dynamic>.from(v.cast<String, dynamic>()));
+        result[k] = _serializeScheduleMap(
+            Map<String, dynamic>.from(v.cast<String, dynamic>()));
       } else {
         result[k] = v;
       }

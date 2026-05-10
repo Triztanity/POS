@@ -8,6 +8,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'device_config_service.dart';
+import 'pos_device_auth_service.dart';
 
 class SmsBookingAlertService {
   SmsBookingAlertService._internal();
@@ -85,6 +86,19 @@ class SmsBookingAlertService {
         return;
       }
       _assignedBus = assignedBus;
+
+      final signedIn = await POSDeviceAuthService().ensureSignedInWithPosRole();
+      if (!signedIn) {
+        _firebaseStarted = false;
+        debugPrint(
+            '[SMS ALERT] Firebase booking sync skipped: POS auth unavailable');
+        return;
+      }
+
+      final authUser = POSDeviceAuthService().getCurrentUser();
+      await authUser?.getIdToken(true);
+      debugPrint(
+          '[SMS ALERT] Firebase booking sync authenticated as ${authUser?.email ?? authUser?.uid ?? 'unknown'} for $assignedBus');
 
       final fs = FirebaseFirestore.instance;
 

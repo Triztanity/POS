@@ -5,6 +5,7 @@ import '../models/booking.dart';
 import '../models/scanned_ticket.dart';
 import '../services/qr_validation_service.dart';
 import '../services/ticket_printer.dart';
+import '../services/trip_record_live_service.dart';
 import '../local_storage.dart';
 import '../utils/fare_calculator.dart';
 import 'booking_confirmation_screen.dart';
@@ -134,7 +135,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       final scheduleMetaValidation =
           QRValidationService.validateScheduleMetadata(qrData);
       if (!scheduleMetaValidation.isValid) {
-        debugPrint('[Scanner] WARN: ${scheduleMetaValidation.errorType} - ${scheduleMetaValidation.message}');
+        debugPrint(
+            '[Scanner] WARN: ${scheduleMetaValidation.errorType} - ${scheduleMetaValidation.message}');
         // Non-blocking: log but continue during QR producer transition period
       }
 
@@ -142,12 +144,14 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       // TODO: Re-enable blocking once field name confirmed in Firestore + QR has scheduleTime
       // Primary source: locally saved accepted schedule (saved at dispatch, no network needed)
       final activeScheduleKey = LocalStorage.getAcceptedScheduleTimeKey();
-      debugPrint('[Scanner] activeScheduleKey from local accepted schedule: "$activeScheduleKey"');
+      debugPrint(
+          '[Scanner] activeScheduleKey from local accepted schedule: "$activeScheduleKey"');
       debugPrint('[Scanner] QR scheduleTime: "${qrData.scheduleTime}"');
       final scheduleMatchValidation =
           QRValidationService.validateScheduleMatch(qrData, activeScheduleKey);
       if (!scheduleMatchValidation.isValid) {
-        debugPrint('[Scanner] WARN: ${scheduleMatchValidation.errorType} - ${scheduleMatchValidation.message}');
+        debugPrint(
+            '[Scanner] WARN: ${scheduleMatchValidation.errorType} - ${scheduleMatchValidation.message}');
         // Non-blocking: log but continue during QR producer transition period
       }
 
@@ -340,6 +344,7 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
 
       // Step 12: Add booking to BookingManager for display on bookings_screen
       BookingManager().addBooking(booking);
+      await TripRecordLiveService().publishNow(reason: 'qr-booking');
 
       // Step 13: Show success and return
       if (!mounted) return;
@@ -392,7 +397,8 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
         await _showError('Wrong Bus', message);
         return;
       case 'DUPLICATE_SCAN':
-        await _showError('Already Used', 'This booking QR has already been used on this trip.');
+        await _showError('Already Used',
+            'This booking QR has already been used on this trip.');
         return;
       case 'ALREADY_CONSUMED':
         await _showError('Already Used', message);

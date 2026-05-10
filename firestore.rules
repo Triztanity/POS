@@ -2,101 +2,278 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function: check user role
+    // Helper: check user role using either UID-keyed or email-keyed /users docs
     function hasRole(role) {
-      let uid = request.auth.uid;
-      let emailKey = request.auth.token.email;
-      let docByUid = get(/databases/$(database)/documents/users/$(uid));
-      let docByEmail = emailKey != null ? get(/databases/$(database)/documents/users/$(emailKey)) : null;
-      return (docByUid.exists() && docByUid.data.role == role) ||
-             (docByEmail != null && docByEmail.exists() && docByEmail.data.role == role);
-    }
-
-    // Helper: check if user is a POS device (has role or @example.com email)
-    function isPosDevice() {
       return request.auth != null && (
-        hasRole('pos') ||
-        (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$'))
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists() &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role)
+        || (request.auth.token.email != null &&
+          get(/databases/$(database)/documents/users/$(request.auth.token.email)).exists() &&
+          get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == role)
       );
     }
 
-    // ============================================================
+    // Helper: check roles stored in /user_accounts, supporting both
+    // fixed role docs (user_accounts/admin) and uid-keyed employee docs.
+    function hasUserAccountRole(role) {
+      return request.auth != null && (
+        (get(/databases/$(database)/documents/user_accounts/$(request.auth.uid)).exists() &&
+          get(/databases/$(database)/documents/user_accounts/$(request.auth.uid)).data.role == role)
+        || (get(/databases/$(database)/documents/user_accounts/$(role)).exists() &&
+          get(/databases/$(database)/documents/user_accounts/$(role)).data.role == role &&
+          (
+            get(/databases/$(database)/documents/user_accounts/$(role)).data.authUid == request.auth.uid
+            || (request.auth.token.email != null &&
+              get(/databases/$(database)/documents/user_accounts/$(role)).data.email == request.auth.token.email)
+          ))
+      );
+    }
+
+    function isTrustedExampleEmail() {
+      return request.auth != null
+          && request.auth.token.email != null
+          && request.auth.token.email.matches('^.+@example\\.com$');
+    }
+
+    function isAdminUser() {
+      return request.auth != null
+          && (
+            hasRole('admin')
+            || hasUserAccountRole('admin')
+            || request.auth.token.email == 'admin@example.com'
+          );
+    }
+
+    function isDispatcherUser() {
+      return request.auth != null
+          && (
+            hasRole('dispatcher')
+            || hasUserAccountRole('dispatcher')
+          );
+    }
+
+    function isDispatcherOrTrusted() {
+      return request.auth != null
+          && (
+            isDispatcherUser()
+            || isTrustedExampleEmail()
+          );
+    }
+
+    function isKnownLoginRole(roleId) {
+      return roleId == 'admin' || roleId == 'dispatcher' || roleId == 'finance';
+    }
+
+    function isPublicPortalLoginLookup() {
+      return request.auth == null
+          && request.query.limit != null
+          && request.query.limit <= 2;
+    }
+
+    function isSeedRoleOwner(roleId) {
+      return request.auth != null && (
+        (roleId == 'admin' && request.auth.token.email == 'admin@example.com')
+        || (roleId == 'dispatcher' && request.auth.token.email == 'dispatcher@example.com')
+        || (roleId == 'finance' && request.auth.token.email == 'finance@example.com')
+      );
+    }
+
+    function isPosDevice() {
+      return request.auth != null && (hasRole('pos') || isTrustedExampleEmail());
+    }
+
+    // ROLE ACCOUNT PROFILES (used by login role selector + admin account management)
+    match /user_accounts/{roleId} {
+      // Allow pre-login reads for the fixed role docs only, and let any
+      // signed-in user read their own UID-keyed account doc.
+      allow get: if isKnownLoginRole(roleId)
+                 || isAdminUser()
+                 || (request.auth != null && request.auth.uid == roleId)
+                 || (
+                   isPosDevice()
+                   && resource.data.enabled == true
+                   && (resource.data.role == 'conductor' || resource.data.role == 'driver')
+                   && resource.data.employeeUidLower == roleId
+                 );
+
+      // Pre-login username lookups need a narrowly-scoped list query against
+      // portal accounts; broader listing remains admin-only.
+      allow list: if isAdminUser() || isPublicPortalLoginLookup();
+
+      // Startup seed may create the initial role doc for the signed-in seed account.
+      allow create: if (isKnownLoginRole(roleId) && (isAdminUser() || isSeedRoleOwner(roleId)))
+                    || (isAdminUser());
+
+      // Ongoing management is admin-only; admins may also write any uid-keyed
+      // doc (used when creating new employee accounts).
+      allow update, delete: if isAdminUser();
+    }
+
     // ARRIVAL REPORTS
-    // ============================================================
     match /arrivalReports/{reportId} {
-      allow create: if isPosDevice();
+      allow create: if request.auth != null && (hasRole('pos') || (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$')));
       allow read: if request.auth != null;
-      allow update: if isPosDevice();
+      allow update: if request.auth != null && (hasRole('pos') || (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$')));
+      allow delete: if false;
     }
 
-    // ============================================================
     // BOOKINGS
-    // ============================================================
     match /bookings/{bookingId} {
-      allow create: if (request.auth != null && request.auth.uid == request.resource.data.userId) || isPosDevice();
-      allow read: if true;
-      allow update, delete: if (request.auth != null && request.auth.uid == resource.data.userId) || isPosDevice();
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
     }
 
-    // ============================================================
-    // BOOKINGS_NEW
-    // ============================================================
-    match /bookings_new/{bookingId} {
-      allow create: if (request.auth != null && request.auth.uid == request.resource.data.userId) || isPosDevice();
-      allow read: if true;
-      allow update, delete: if (request.auth != null && request.auth.uid == resource.data.userId) || isPosDevice();
-    }
-
-    // ============================================================
-    // BOOKINGS_ARCHIVE
-    // ============================================================
-    match /bookings_archive/{bookingId} {
-      allow read: if true;
-      allow create, update, delete: if isPosDevice();
-    }
-
-    // ============================================================
-    // USERS (Role Definitions)
-    // ============================================================
+    // USERS (role definitions)
     match /users/{userId} {
-      allow read: if request.auth != null && (
-        request.auth.uid == userId ||
-        request.auth.token.email == userId
+      allow get: if request.auth != null && (
+        request.auth.uid == userId
+        || request.auth.token.email == userId
+        || isAdminUser()
       );
-      allow write: if request.auth != null && (
-        request.auth.uid == userId ||
-        request.auth.token.email == userId
+      allow list: if isAdminUser();
+      allow create, update, delete: if request.auth != null && (
+        request.auth.uid == userId
+        || isAdminUser()
       );
     }
 
-    // ============================================================
     // SCHEDULES
-    // ============================================================
     match /schedules/{tripId} {
-      allow create: if request.auth != null && hasRole('dispatcher');
+      // Dispatcher (role) or dev example.com accounts can create schedules
+      allow create: if isDispatcherOrTrusted();
+
       allow read: if request.auth != null;
-      // POS may set cancellation signal via cancelledAt for dispatcher workflow.
-      allow update: if request.auth != null && (
-        hasRole('dispatcher') ||
-        isPosDevice()
+
+      // Helper: prevent changing status once schedule is 'arrived' (terminal state)
+      // Note: we explicitly require that if the stored status is 'arrived', the
+      // incoming write must keep `status` identical to prevent clients from
+      // switching it back to another terminal state.
+      function arrivedIsTerminal() {
+        return !(resource.data.status == 'arrived' && request.resource.data.status != resource.data.status);
+      }
+
+      // Helper: prevent changing status once schedule is cancelled/canceled.
+      function cancelledIsTerminal() {
+        return !(
+          (resource.data.status == 'cancelled' || resource.data.status == 'canceled') &&
+          request.resource.data.status != resource.data.status
+        );
+      }
+
+      // Updates:
+      // - Dispatcher can update any field, but cannot change an 'arrived' status.
+      // - POS devices (or dev example.com accounts) may update only dispatch-related fields
+      //   and must not modify core identifying fields (tripId, busNumber, scheduledTime, route).
+      // - Allow explicit, minimal status transition from 'pre-departure' -> 'dispatched'
+      //   for dispatch actions when performed by dispatchers or trusted dev emails.
+      // - Allow editing route/scheduled time while status is 'pre-departure'.
+      // - No one can change the status of a schedule that is already 'arrived'.
+      allow update: if request.auth != null && arrivedIsTerminal() && cancelledIsTerminal() && (
+        // Full dispatcher privileges
+        isDispatcherUser()
+
+        // POS / trusted device limited updates
+        || (
+          (hasRole('pos') || (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$'))) &&
+          exists(/databases/$(database)/documents/schedules/$(tripId)) &&
+          request.resource.data.tripId == resource.data.tripId &&
+          request.resource.data.busNumber == resource.data.busNumber &&
+          request.resource.data.scheduledTime == resource.data.scheduledTime &&
+          // route equality is required for POS updates that include route info
+          ( !('route' in request.resource.data) || request.resource.data.route == resource.data.route ) &&
+          // Only allow changes to dispatch-related fields for POS
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','dispatchTime','driverName','conductorName','updatedAt']) &&
+          !(resource.data.status == 'arrived' && request.resource.data.status != resource.data.status)
+        )
+
+        // POS arrival action: active/departed schedule -> arrived.
+        || (
+          isPosDevice() &&
+          exists(/databases/$(database)/documents/schedules/$(tripId)) &&
+          (resource.data.status in ['departed', 'dispatched', 'in-progress']) &&
+          request.resource.data.status == 'arrived' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','arrivedAt','updatedAt'])
+        )
+
+        // Minimal cancellation action from the schedule dialog.
+        || (
+          isDispatcherOrTrusted() &&
+          request.resource.data.status == 'cancelled' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','cancelledAt','canceledAt','cancelledTime','updatedAt'])
+        )
+
+        // Minimal dispatcher dashboard action: allow transition pre-departure -> departed
+        // when performed by dispatcher role or trusted dev email and only status/dispatchTime/updatedAt are changed.
+        || (
+          isDispatcherOrTrusted() &&
+          resource.data.status == 'pre-departure' &&
+          // Accept either 'dispatched' or legacy 'departed' writes from backend
+          (request.resource.data.status == 'dispatched' || request.resource.data.status == 'departed') &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','dispatchTime','updatedAt'])
+        )
+
+        // Allow editors to change route/time when still pre-departure
+        || (
+          isDispatcherOrTrusted() &&
+          resource.data.status == 'pre-departure' &&
+          // allow editing route and scheduled time fields only
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['route','scheduledTime','scheduledTimeStr','updatedAt'])
+        )
       );
+
+      allow delete: if request.auth != null
+              && isDispatcherUser()
+              && resource.data.status == 'pre-departure';
     }
 
-    // ============================================================
+    // LIVE / FINAL TRIP RECORDS
+    match /trip_records/{tripId} {
+      allow read: if request.auth != null;
+      allow create, update: if isPosDevice()
+        && request.resource.data.tripId == tripId
+        && request.resource.data.scheduleTripId == tripId;
+      allow delete: if false;
+    }
+
     // TRIP DETAILS
-    // ============================================================
     match /tripDetails/{detailId} {
-      allow create: if isPosDevice();
+      allow create: if request.auth != null && (hasRole('pos') || (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$')));
       allow read: if request.auth != null;
       allow update, delete: if false;
     }
 
-    // ============================================================
-    // INSPECTIONS
-    // ============================================================
-    match /inspections/{inspectionId} {
-      allow create, update: if isPosDevice();
-      allow read: if request.auth != null;
-    }
+    // TERMINAL UPDATES
+        match /terminalUpdates/{updateId} {
+          // Dispatcher or dev example.com accounts can create and update terminal updates
+          allow create, update: if isDispatcherOrTrusted();
+
+            allow read: if request.auth != null;
+            allow delete: if false;
+        }
+
+        // INSPECTIONS
+        match /inspections/{inspectionId} {
+            allow create, update: if isPosDevice();
+            allow read: if request.auth != null;
+        }
+
+        // TERMINALS
+        match /terminals/{terminalId} {
+            allow read: if request.auth != null;
+            allow create, update, delete: if isAdminUser();
+        }
+
+        // FARE TABLE ENTRIES
+        match /fare_table_entries/{entryId} {
+            allow read: if request.auth != null;
+            allow create, update, delete: if isAdminUser();
+        }
+
+        // BUS FLEET
+        match /bus/{busId} {
+            allow read: if request.auth != null;
+            allow create, update, delete: if isAdminUser();
+        }
+
   }
 }

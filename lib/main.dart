@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:senraise_printer/senraise_printer.dart';
 import 'screens/splash_screen.dart';
@@ -8,9 +10,10 @@ import 'local_storage.dart';
 import 'services/nfc_reader_mode_service.dart';
 import 'services/inspector_nfc_handler.dart';
 import 'services/inspection_sync_service.dart';
-import 'services/arrival_report_sync_service.dart';
 import 'services/booking_status_orchestrator_service.dart';
 import 'services/sms_booking_alert_service.dart';
+import 'services/fare_table_cache_service.dart';
+import 'services/trip_record_live_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
@@ -22,8 +25,9 @@ void main() async {
 
   // Initialize local offline storage before app starts
   await LocalStorage.init();
+  await FareTableCacheService().loadCachedEntries();
 
-  // Initialize Firebase (required for Firestore uploads of arrival reports)
+  // Initialize Firebase (required for Firestore trip, schedule, and sync writes)
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -36,7 +40,7 @@ void main() async {
   // Device-level auth removed from startup (Option 2: Lazy-Load Device Auth)
   // Device will authenticate on-demand when syncing data to Firestore.
   // This allows app to start instantly and work offline without blocking on Firebase.
-  // See: firebase_dispatch_service.dart and arrival_report_sync_service.dart
+  // See: firebase_dispatch_service.dart and trip_record_live_service.dart
 
   // Attempt to auto-detect device and persist assigned bus (must run before UI)
   try {
@@ -69,32 +73,52 @@ class AfcsApp extends StatefulWidget {
   State<AfcsApp> createState() => _AfcsAppState();
 }
 
-class _AfcsAppState extends State<AfcsApp> {
+class _AfcsAppState extends State<AfcsApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Start native NFC ReaderMode for reliable tag detection
     NFCReaderModeService.instance.start();
     // Start global NFC listener in AppState so driver taps register app-wide
     AppState.instance.startNfcListener();
     // Initialize inspection sync service (watches for connectivity changes)
     InspectionSyncService();
-    // Start arrival report background sync service
-    ArrivalReportSyncService();
     // Start listening for incoming booking alerts via SMS
     SmsBookingAlertService().startListening();
     // Start online-first booking status update orchestrator
     BookingStatusOrchestratorService().initialize();
+    // Hydrate fare/station table from Firestore when online and cache is stale
+    FareTableCacheService().start();
 
     debugPrint('[MAIN] AfcsApp initState complete');
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('[MAIN] App resumed, forcing fare/station refresh');
+      unawaited(FareTableCacheService().refreshIfStale(force: true));
+      return;
+    }
+
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      debugPrint(
+          '[MAIN] App leaving foreground, best-effort fare/station refresh');
+      unawaited(FareTableCacheService().refreshIfStale(force: true));
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     NFCReaderModeService.instance.stop();
     InspectorNFCHandler.instance.dispose();
     InspectionSyncService().dispose();
     BookingStatusOrchestratorService().dispose();
+    FareTableCacheService().dispose();
+    TripRecordLiveService().dispose();
     super.dispose();
   }
 

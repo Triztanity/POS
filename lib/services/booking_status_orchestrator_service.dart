@@ -193,120 +193,23 @@ class BookingStatusOrchestratorService {
         if (dropoffTimestamp.isNotEmpty) 'dropoffTimestamp': dropoffTimestamp,
       };
 
-      if (status == 'on-board') {
-        return _moveToBookings(bookingId, updates, eventId);
-      }
-      if (status == 'dropped-off') {
-        return _moveToArchive(bookingId, updates, eventId);
-      }
+      final collections = status == 'dropped-off'
+          ? ['bookings', 'bookings_new']
+          : ['bookings_new', 'bookings'];
 
-      return _updateInFirstFound(
+      final updated = await _updateInFirstFound(
         bookingId,
-        ['bookings_new', 'bookings', 'bookings_archive'],
+        collections,
         updates,
         eventId,
       );
+      if (updated) return true;
+
+      return _statusAlreadyArchived(bookingId, status);
     } catch (e) {
       debugPrint('[BookingStatus] Firestore update error: $e');
       return false;
     }
-  }
-
-  Future<bool> _moveToBookings(
-    String bookingId,
-    Map<String, dynamic> updates,
-    String eventId,
-  ) async {
-    final fromNew =
-        await _firestore.collection('bookings_new').doc(bookingId).get();
-    if (fromNew.exists) {
-      final current = fromNew.data() ?? <String, dynamic>{};
-      if (_isDuplicateEvent(current, eventId)) {
-        return true;
-      }
-
-      final batch = _firestore.batch();
-      final target = _firestore.collection('bookings').doc(bookingId);
-      batch.set(
-          target,
-          {
-            ...current,
-            ...updates,
-            'movedFrom': 'bookings_new',
-            'movedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true));
-      batch.delete(fromNew.reference);
-      await batch.commit();
-      return true;
-    }
-
-    return _updateInFirstFound(
-      bookingId,
-      ['bookings', 'bookings_archive'],
-      updates,
-      eventId,
-    );
-  }
-
-  Future<bool> _moveToArchive(
-    String bookingId,
-    Map<String, dynamic> updates,
-    String eventId,
-  ) async {
-    final fromBookings =
-        await _firestore.collection('bookings').doc(bookingId).get();
-    if (fromBookings.exists) {
-      final current = fromBookings.data() ?? <String, dynamic>{};
-      if (_isDuplicateEvent(current, eventId)) {
-        return true;
-      }
-
-      final batch = _firestore.batch();
-      final target = _firestore.collection('bookings_archive').doc(bookingId);
-      batch.set(
-          target,
-          {
-            ...current,
-            ...updates,
-            'movedFrom': 'bookings',
-            'movedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true));
-      batch.delete(fromBookings.reference);
-      await batch.commit();
-      return true;
-    }
-
-    final fromNew =
-        await _firestore.collection('bookings_new').doc(bookingId).get();
-    if (fromNew.exists) {
-      final current = fromNew.data() ?? <String, dynamic>{};
-      if (_isDuplicateEvent(current, eventId)) {
-        return true;
-      }
-      final batch = _firestore.batch();
-      final target = _firestore.collection('bookings_archive').doc(bookingId);
-      batch.set(
-          target,
-          {
-            ...current,
-            ...updates,
-            'movedFrom': 'bookings_new',
-            'movedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true));
-      batch.delete(fromNew.reference);
-      await batch.commit();
-      return true;
-    }
-
-    return _updateInFirstFound(
-      bookingId,
-      ['bookings_archive'],
-      updates,
-      eventId,
-    );
   }
 
   Future<bool> _updateInFirstFound(
@@ -330,6 +233,19 @@ class BookingStatusOrchestratorService {
     }
 
     return false;
+  }
+
+  Future<bool> _statusAlreadyArchived(String bookingId, String status) async {
+    try {
+      final snap =
+          await _firestore.collection('bookings_archive').doc(bookingId).get();
+      if (!snap.exists) return false;
+      final archivedStatus =
+          (snap.data()?['status'] ?? '').toString().trim().toLowerCase();
+      return archivedStatus == status;
+    } catch (_) {
+      return false;
+    }
   }
 
   bool _isDuplicateEvent(Map<String, dynamic> current, String eventId) {

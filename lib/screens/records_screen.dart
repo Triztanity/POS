@@ -10,10 +10,9 @@ import '../widgets/internet_connectivity_dialog.dart';
 import '../utils/dialogs.dart';
 
 class RecordsScreen extends StatefulWidget {
-  final Map<String, dynamic>? dispatcherInfo;
   final String? routeDirection;
 
-  const RecordsScreen({super.key, this.dispatcherInfo, this.routeDirection});
+  const RecordsScreen({super.key, this.routeDirection});
 
   @override
   State<RecordsScreen> createState() => _RecordsScreenState();
@@ -136,6 +135,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
   void _loadInitialData() {
     final conductor = AppState.instance.conductor;
     final driver = AppState.instance.driver;
+
     String normalizeRoute(String? r) {
       if (r == null) return 'unknown';
       final lr = r.toString().toLowerCase().trim();
@@ -149,7 +149,6 @@ class _RecordsScreenState extends State<RecordsScreen> {
       'vehicleNo': LocalStorage.getCurrentVehicleNo(),
       'conductor': conductor?['name'] ?? 'Unknown',
       'driver': driver?['name'] ?? 'Unknown',
-      'dispatcher': widget.dispatcherInfo?['name'] ?? 'Unknown',
       'route': normalizeRoute(widget.routeDirection),
     };
 
@@ -238,8 +237,6 @@ class _RecordsScreenState extends State<RecordsScreen> {
                       'Conductor', _tripInfo['conductor'] ?? '', screenW),
                   _buildKeyValueRow(
                       'Driver', _tripInfo['driver'] ?? '', screenW),
-                  _buildKeyValueRow(
-                      'Dispatcher', _tripInfo['dispatcher'] ?? '', screenW),
                   _buildKeyValueRow('Route', _tripInfo['route'] ?? '', screenW),
                   _buildKeyValueRow(
                       'No. of Inspections made',

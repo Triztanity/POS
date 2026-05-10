@@ -28,6 +28,7 @@ class _InspectorScreenState extends State<InspectorScreen>
   late TextEditingController _customExplanationController;
   late List<String> stops;
   String? currentLocation;
+  StreamSubscription<void>? _fareTableSub;
 
   bool _isCleared = false;
 
@@ -52,7 +53,13 @@ class _InspectorScreenState extends State<InspectorScreen>
           ? widget.routeDirection
           : 'north_to_south';
     }
-    _initializeStopsAndLocation();
+    _initializeStopsAndLocation(preserveLocation: false);
+    _fareTableSub = FareTable.changes.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _initializeStopsAndLocation(preserveLocation: true);
+      });
+    });
     _loadBookings();
   }
 
@@ -74,12 +81,31 @@ class _InspectorScreenState extends State<InspectorScreen>
     return 'north_to_south';
   }
 
-  void _initializeStopsAndLocation() {
+  void _initializeStopsAndLocation({required bool preserveLocation}) {
     final forwardStops = FareTable.placeNamesWithKm;
     stops = _derivedRouteDirection == 'north_to_south'
         ? List.from(forwardStops)
         : List.from(forwardStops.reversed);
-    currentLocation = 'OVERVIEW';
+
+    if (!preserveLocation || currentLocation == null) {
+      currentLocation = 'OVERVIEW';
+      return;
+    }
+
+    if (currentLocation == 'OVERVIEW') return;
+    currentLocation =
+        _findEquivalentStop(stops, currentLocation!) ?? 'OVERVIEW';
+  }
+
+  String? _findEquivalentStop(List<String> candidateStops, String selected) {
+    final selectedPlace =
+        FareTable.normalizePlaceName(FareTable.extractPlaceName(selected));
+    for (final stop in candidateStops) {
+      final stopPlace =
+          FareTable.normalizePlaceName(FareTable.extractPlaceName(stop));
+      if (stopPlace == selectedPlace) return stop;
+    }
+    return null;
   }
 
   List<Booking> _getCombinedBookings() {
@@ -159,6 +185,194 @@ class _InspectorScreenState extends State<InspectorScreen>
       }
     }
     return count;
+  }
+
+  Widget _buildPassengerDestinationSection(double screenH) {
+    final tableHeight = max(180.0, min(screenH * 0.32, 280.0));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Passenger Destinations',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: tableHeight,
+          child: _buildDropoffsTableCompact(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDropoffsTableCompact() {
+    final bookings = _getCombinedBookings();
+    final selectedLocation = currentLocation;
+    final currentIdx =
+        selectedLocation == null || selectedLocation == 'OVERVIEW'
+            ? -1
+            : stops.indexOf(selectedLocation);
+
+    final orderedStops = currentIdx == -1
+        ? List<String>.from(stops)
+        : (currentIdx + 1 < stops.length
+            ? stops.sublist(currentIdx + 1)
+            : <String>[]);
+
+    final countsByStop = <String, Map<String, int>>{};
+    for (final stop in orderedStops) {
+      countsByStop[stop] = {'walkin': 0, 'booking': 0};
+    }
+
+    for (final booking in bookings) {
+      final toIdx = _findStopIndexForLocation(booking.toLocation);
+      if (toIdx == -1) continue;
+      if (currentIdx != -1 && toIdx <= currentIdx) continue;
+
+      final stop = stops[toIdx];
+      final counts = countsByStop[stop];
+      if (counts == null) continue;
+
+      if (booking.passengerUid == null) {
+        counts['walkin'] = (counts['walkin'] ?? 0) + booking.passengers;
+      } else if (booking.status == 'on-board') {
+        counts['booking'] = (counts['booking'] ?? 0) + booking.passengers;
+      }
+    }
+
+    final entries = countsByStop.entries
+        .where((entry) =>
+            ((entry.value['walkin'] ?? 0) + (entry.value['booking'] ?? 0)) > 0)
+        .toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: const [
+                Expanded(
+                  child: Text('Destination',
+                      style:
+                          TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                ),
+                SizedBox(width: 12),
+                SizedBox(
+                  width: 72,
+                  child: Text('Walk-in',
+                      textAlign: TextAlign.center,
+                      style:
+                          TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                ),
+                SizedBox(width: 12),
+                SizedBox(
+                  width: 72,
+                  child: Text('Booking',
+                      textAlign: TextAlign.center,
+                      style:
+                          TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Colors.grey),
+          Expanded(
+            child: entries.isEmpty
+                ? const Center(
+                    child: Text('No passengers to display',
+                        style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    itemCount: entries.length,
+                    separatorBuilder: (_, __) =>
+                        Divider(height: 1, color: Colors.grey[200]),
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      final location = entry.key;
+                      final walkinCount = entry.value['walkin'] ?? 0;
+                      final bookingCount = entry.value['booking'] ?? 0;
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(location,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                            SizedBox(
+                              width: 72,
+                              child: Container(
+                                alignment: Alignment.center,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[50],
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text('$walkinCount',
+                                    style: TextStyle(
+                                        color: Colors.blue[800],
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12)),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              width: 72,
+                              child: Container(
+                                alignment: Alignment.center,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.green[50],
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text('$bookingCount',
+                                    style: TextStyle(
+                                        color: Colors.green[800],
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _findStopIndexForLocation(String location) {
+    final normalizedLocation = _normalizeLocationName(location);
+    final locationWords = normalizedLocation
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .toList();
+
+    for (int i = 0; i < stops.length; i++) {
+      final normalizedStop = _normalizeLocationName(stops[i]);
+      final stopWords = normalizedStop
+          .split(RegExp(r'\s+'))
+          .where((word) => word.isNotEmpty)
+          .toList();
+      if (stopWords.every((stopWord) => locationWords.contains(stopWord))) {
+        return i;
+      }
+    }
+
+    return -1;
   }
 
   // No persistent system count state here; compute on-demand via _getPassengersOnBoard()
@@ -388,6 +602,7 @@ class _InspectorScreenState extends State<InspectorScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _fareTableSub?.cancel();
     _manualCountController.dispose();
     _commentsController.dispose();
     _customExplanationController.dispose();
@@ -619,6 +834,9 @@ class _InspectorScreenState extends State<InspectorScreen>
                   ),
                 ),
 
+              SizedBox(height: screenH * 0.03),
+
+              _buildPassengerDestinationSection(screenH),
               SizedBox(height: screenH * 0.03),
 
               // Comments section

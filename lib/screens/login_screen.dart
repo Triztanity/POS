@@ -6,9 +6,9 @@ import '../local_storage.dart';
 import '../services/nfc_reader_mode_service.dart';
 import '../services/app_state.dart';
 import '../services/device_config_service.dart';
+import '../services/pos_device_auth_service.dart';
 import '../models/booking.dart';
 import 'home_screen.dart';
-import '../utils/dialogs.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -35,8 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     AppState.instance.setCurrentScreen('login_screen');
-    _initScheduleListener();
-    _initNfc();
+    unawaited(_bootstrapLogin());
   }
 
   @override
@@ -47,6 +46,30 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ─── Schedule Listener ───────────────────────────────────────────────
+
+  Future<void> _bootstrapLogin() async {
+    if (mounted) {
+      setState(() {
+        _loadingSchedule = true;
+        _status = 'Signing in POS device...';
+      });
+    }
+
+    final signedIn = await POSDeviceAuthService().ensureSignedInWithPosRole();
+    if (!mounted) return;
+
+    if (!signedIn) {
+      setState(() {
+        _loadingSchedule = false;
+        _status = 'Firebase login failed. Check POS device registration.';
+      });
+      return;
+    }
+
+    await _initScheduleListener();
+    if (!mounted) return;
+    _initNfc();
+  }
 
   Future<void> _initScheduleListener() async {
     var bus = await DeviceConfigService.getAssignedBus();
@@ -68,55 +91,65 @@ class _LoginScreenState extends State<LoginScreen> {
         .where('status', whereIn: ['pre-departure', 'departed'])
         .snapshots()
         .listen((snapshot) {
-      if (!mounted) return;
-      if (snapshot.docs.isNotEmpty) {
-        final docs = snapshot.docs.toList();
-        
-        docs.sort((a, b) {
-          final dataA = a.data();
-          final dataB = b.data();
-          final sA = (dataA['status'] ?? '').toString().toLowerCase();
-          final sB = (dataB['status'] ?? '').toString().toLowerCase();
-          
-          // 1. Departed takes absolute priority (ongoing trip)
-          if (sA == 'departed' && sB != 'departed') return -1;
-          if (sB == 'departed' && sA != 'departed') return 1;
+          if (!mounted) return;
+          if (snapshot.docs.isNotEmpty) {
+            final docs = snapshot.docs.toList();
 
-          // 2. Otherwise sort by scheduledTime (earliest first)
-          final timeA = dataA['scheduledTime'];
-          final timeB = dataB['scheduledTime'];
-          
-          DateTime? dtA;
-          if (timeA is Timestamp) dtA = timeA.toDate();
-          else if (timeA is String) dtA = DateTime.tryParse(timeA);
+            docs.sort((a, b) {
+              final dataA = a.data();
+              final dataB = b.data();
+              final sA = (dataA['status'] ?? '').toString().toLowerCase();
+              final sB = (dataB['status'] ?? '').toString().toLowerCase();
 
-          DateTime? dtB;
-          if (timeB is Timestamp) dtB = timeB.toDate();
-          else if (timeB is String) dtB = DateTime.tryParse(timeB);
+              // 1. Departed takes absolute priority (ongoing trip)
+              if (sA == 'departed' && sB != 'departed') {
+                return -1;
+              }
+              if (sB == 'departed' && sA != 'departed') {
+                return 1;
+              }
 
-          if (dtA != null && dtB != null) return dtA.compareTo(dtB);
-          if (dtA != null) return -1;
-          if (dtB != null) return 1;
-          return 0;
+              // 2. Otherwise sort by scheduledTime (earliest first)
+              final timeA = dataA['scheduledTime'];
+              final timeB = dataB['scheduledTime'];
+
+              DateTime? dtA;
+              if (timeA is Timestamp) {
+                dtA = timeA.toDate();
+              } else if (timeA is String) {
+                dtA = DateTime.tryParse(timeA);
+              }
+
+              DateTime? dtB;
+              if (timeB is Timestamp) {
+                dtB = timeB.toDate();
+              } else if (timeB is String) {
+                dtB = DateTime.tryParse(timeB);
+              }
+
+              if (dtA != null && dtB != null) return dtA.compareTo(dtB);
+              if (dtA != null) return -1;
+              if (dtB != null) return 1;
+              return 0;
+            });
+
+            final data = docs.first.data();
+            setState(() {
+              _schedule = data;
+              _loadingSchedule = false;
+              _updateStatus();
+            });
+          } else {
+            setState(() {
+              _schedule = null;
+              _loadingSchedule = false;
+              _status = 'No active schedule for $_assignedBus';
+            });
+          }
+        }, onError: (e) {
+          debugPrint('[LOGIN] Schedule listener error: $e');
+          if (mounted) setState(() => _loadingSchedule = false);
         });
-
-        final data = docs.first.data();
-        setState(() {
-          _schedule = data;
-          _loadingSchedule = false;
-          _updateStatus();
-        });
-      } else {
-        setState(() {
-          _schedule = null;
-          _loadingSchedule = false;
-          _status = 'No active schedule for $_assignedBus';
-        });
-      }
-    }, onError: (e) {
-      debugPrint('[LOGIN] Schedule listener error: $e');
-      if (mounted) setState(() => _loadingSchedule = false);
-    });
   }
 
   // ─── NFC Listener ────────────────────────────────────────────────────
@@ -126,9 +159,21 @@ class _LoginScreenState extends State<LoginScreen> {
       NFCReaderModeService.instance.resetDebounce();
     } catch (_) {}
 
-    _nfcSub = NFCReaderModeService.instance.onTag.listen((user) {
+    _nfcSub = NFCReaderModeService.instance.onTag.listen((user) async {
       debugPrint('[LOGIN] NFC tag: $user');
+      final recognized = user['recognized'] != false;
       final role = (user['role'] ?? '').toString().toLowerCase();
+
+      if (!recognized) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Card not recognized or disabled.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ));
+        }
+        return;
+      }
 
       if (role == 'inspector') {
         debugPrint('[LOGIN] inspector card, ignoring');
@@ -138,6 +183,17 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (role != 'conductor' && role != 'driver') {
+        return;
+      }
+
+      if (user['resolvedFromFirebase'] != true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Firebase employee validation required for login.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ));
+        }
         return;
       }
 
@@ -155,15 +211,17 @@ class _LoginScreenState extends State<LoginScreen> {
       if (role == 'conductor') {
         setState(() {
           _conductor = user;
+          _updateStatus();
         });
         AppState.instance.setConductor(user);
-        LocalStorage.saveCurrentConductor(user);
+        await LocalStorage.saveCurrentConductor(user);
       } else if (role == 'driver') {
         setState(() {
           _driver = user;
+          _updateStatus();
         });
         AppState.instance.setDriver(user);
-        LocalStorage.saveCurrentDriver(user);
+        await LocalStorage.saveCurrentDriver(user);
       }
 
       // Check if both are scanned and schedule is ready
@@ -227,13 +285,19 @@ class _LoginScreenState extends State<LoginScreen> {
       if (routeId == 'south_to_north' || routeId == 'north_to_south') {
         routeDirection = routeId;
       } else {
-        final routeName = (_schedule!['route'] ?? _schedule!['routeName'] ?? _schedule!['busRoute'] ?? '').toString().toLowerCase();
+        final routeName = (_schedule!['route'] ??
+                _schedule!['routeName'] ??
+                _schedule!['busRoute'] ??
+                '')
+            .toString()
+            .toLowerCase();
         if (routeName.startsWith('batangas')) routeDirection = 'south_to_north';
         if (routeName.startsWith('nasugbu')) routeDirection = 'north_to_south';
       }
     }
 
-    LocalStorage.saveLastScreen('home_screen', {'routeDirection': routeDirection});
+    LocalStorage.saveLastScreen(
+        'home_screen', {'routeDirection': routeDirection});
 
     Navigator.pushReplacement(
       context,
@@ -258,7 +322,11 @@ class _LoginScreenState extends State<LoginScreen> {
     // Save route
     try {
       final routeId = (_schedule!['routeId'] ?? '').toString();
-      final routeName = (_schedule!['route'] ?? _schedule!['routeName'] ?? _schedule!['busRoute'] ?? '').toString();
+      final routeName = (_schedule!['route'] ??
+              _schedule!['routeName'] ??
+              _schedule!['busRoute'] ??
+              '')
+          .toString();
       if (routeId.isNotEmpty || routeName.isNotEmpty) {
         await LocalStorage.setCurrentRoute(routeId, routeName);
       }
@@ -290,7 +358,8 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: EdgeInsets.symmetric(horizontal: screenW * 0.06, vertical: 16),
+            padding:
+                EdgeInsets.symmetric(horizontal: screenW * 0.06, vertical: 16),
             child: Column(
               children: [
                 // ── Header ──
@@ -301,7 +370,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: Colors.green[700],
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.directions_bus, size: 40, color: Colors.white),
+                  child: const Icon(Icons.directions_bus,
+                      size: 40, color: Colors.white),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -328,10 +398,23 @@ class _LoginScreenState extends State<LoginScreen> {
                 // ── Crew Cards Row ──
                 Row(
                   children: [
-                    Expanded(child: _buildCrewCard('CONDUCTOR', _conductor, Colors.green)),
+                    Expanded(
+                        child: _buildCrewCard(
+                            'CONDUCTOR', _conductor, Colors.green)),
                     const SizedBox(width: 10),
-                    Expanded(child: _buildCrewCard('DRIVER', _driver, Colors.blue)),
+                    Expanded(
+                        child: _buildCrewCard('DRIVER', _driver, Colors.blue)),
                   ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _status,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[700],
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
@@ -385,7 +468,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final status = (_schedule!['status'] ?? '').toString().toLowerCase();
     final isReady = status == 'departed';
-    final routeName = (_schedule!['route'] ?? _schedule!['routeName'] ?? _schedule!['busRoute'] ?? '').toString();
+    final routeName = (_schedule!['route'] ??
+            _schedule!['routeName'] ??
+            _schedule!['busRoute'] ??
+            '')
+        .toString();
     final rawTime = _schedule!['scheduledTime'];
 
     String formattedTime = '';
@@ -393,7 +480,8 @@ class _LoginScreenState extends State<LoginScreen> {
       formattedTime = DateFormat('h:mm a').format(rawTime.toDate());
     } else if (rawTime is String && rawTime.isNotEmpty) {
       final parsed = DateTime.tryParse(rawTime);
-      formattedTime = parsed != null ? DateFormat('h:mm a').format(parsed) : rawTime;
+      formattedTime =
+          parsed != null ? DateFormat('h:mm a').format(parsed) : rawTime;
     } else if (rawTime != null) {
       formattedTime = rawTime.toString();
     }
@@ -453,8 +541,7 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label,
-              style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+          Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
           Flexible(
             child: Text(
               value,

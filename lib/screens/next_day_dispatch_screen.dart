@@ -157,7 +157,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
 
     await LocalStorage.clearCurrentConductor();
     AppState.instance.setConductor(null);
-    
+
     // Save the driver who deployed
     AppState.instance.setDriver(driverEmployee);
     await LocalStorage.saveCurrentDriver(driverEmployee);
@@ -197,9 +197,9 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
         nfcSubscription =
             NFCReaderModeService.instance.onTag.listen((data) async {
           try {
-            final tappedUid = data['uid']?.toString() ?? '';
-            final employee = LocalStorage.getEmployee(tappedUid);
-            if (employee != null && (employee['role'] ?? '') == 'driver') {
+            final employee = Map<String, dynamic>.from(data as Map);
+            if (employee['recognized'] != false &&
+                (employee['role'] ?? '') == 'driver') {
               try {
                 await nfcSubscription.cancel();
               } catch (_) {}
@@ -215,7 +215,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
             } else {
               if (mounted) {
                 Dialogs.showMessage(context, 'Invalid card',
-                    'Invalid card. Expected driver, got ${employee?['role'] ?? 'unknown'}',
+                    'Invalid card. Expected driver, got ${employee['role'] ?? 'unknown'}',
                     icon: Icons.error, iconColor: Colors.red);
               }
             }
@@ -289,9 +289,9 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
         nfcSubscription =
             NFCReaderModeService.instance.onTag.listen((data) async {
           try {
-            final tappedUid = data['uid']?.toString() ?? '';
-            final employee = LocalStorage.getEmployee(tappedUid);
-            if (employee != null && (employee['role'] ?? '') == 'driver') {
+            final employee = Map<String, dynamic>.from(data as Map);
+            if (employee['recognized'] != false &&
+                (employee['role'] ?? '') == 'driver') {
               try {
                 await nfcSubscription.cancel();
               } catch (_) {}
@@ -307,7 +307,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
             } else {
               if (mounted) {
                 Dialogs.showMessage(context, 'Invalid card',
-                    'Invalid card. Expected driver, got ${employee?['role'] ?? 'unknown'}',
+                    'Invalid card. Expected driver, got ${employee['role'] ?? 'unknown'}',
                     icon: Icons.error, iconColor: Colors.red);
               }
             }
@@ -388,8 +388,7 @@ class _NextDayDispatchScreenState extends State<NextDayDispatchScreen> {
                       await LocalStorage.clearLastScreen();
                       Navigator.pushReplacement(
                         context,
-                        MaterialPageRoute(
-                            builder: (_) => const LoginScreen()),
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
                       );
                     },
                   ),

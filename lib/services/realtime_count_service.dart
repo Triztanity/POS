@@ -14,7 +14,6 @@ import 'package:flutter/foundation.dart';
 import '../local_storage.dart';
 import '../models/booking.dart';
 import '../utils/fare_calculator.dart';
-import 'station_registry.dart';
 
 class RealtimeCountService {
   RealtimeCountService._();
@@ -25,6 +24,7 @@ class RealtimeCountService {
   /// This mirrors PassengersScreen.getPassengersOnBoard() exactly.
   static int computeOnBoardCount({
     required int currentStationOrder,
+    required String currentStationName,
     required String routeDirection,
   }) {
     final bookings = _getAllRecords();
@@ -36,13 +36,11 @@ class RealtimeCountService {
         ? List<String>.from(forwardStops)
         : List<String>.from(forwardStops.reversed);
 
-    // Map currentStationOrder (from StationRegistry) to a stop index in the fare table
-    // We translate via station name → fare table stop name fuzzy match
-    final currentStationName = StationRegistry.byOrder(currentStationOrder)?.name ?? '';
     final currentIdx = _resolveStopIndex(currentStationName, stops);
 
     if (currentIdx == -1) {
-      debugPrint('[RealtimeCount] Cannot resolve currentStation "$currentStationName" in fare table stops.');
+      debugPrint(
+          '[RealtimeCount] Cannot resolve currentStation "$currentStationName" (order: $currentStationOrder) in fare table stops.');
       return 0;
     }
 
@@ -72,7 +70,9 @@ class RealtimeCountService {
       final manager = BookingManager();
       var bookings = manager.getBookings().toList();
 
-      final walkins = LocalStorage.loadWalkinsForTrip(LocalStorage.getCurrentTripId()).toList();
+      final walkins =
+          LocalStorage.loadWalkinsForTrip(LocalStorage.getCurrentTripId())
+              .toList();
       for (final walkin in walkins) {
         final b = Booking(
           id: walkin['id'] ?? '',
@@ -120,14 +120,17 @@ class RealtimeCountService {
 
     // ── Fallback: token-based fuzzy match with punctuation normalization ──
     final inputNorm = _normalizeFull(locationName);
-    final inputWords = inputNorm.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final inputWords =
+        inputNorm.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
     if (inputWords.isEmpty) return -1;
 
     for (int i = 0; i < stops.length; i++) {
       final stopNorm = _normalizeFull(stops[i]);
-      final stopWords = stopNorm.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+      final stopWords =
+          stopNorm.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
       // All stop words must appear in the location words
-      if (stopWords.isNotEmpty && stopWords.every((sw) => inputWords.contains(sw))) {
+      if (stopWords.isNotEmpty &&
+          stopWords.every((sw) => inputWords.contains(sw))) {
         return i;
       }
     }
@@ -142,12 +145,11 @@ class RealtimeCountService {
     // Strip leading km|prefix (e.g. "32|CALACA BAYAN" → "CALACA BAYAN")
     final stripped = s.contains('|') ? s.split('|').skip(1).join(' ') : s;
     return stripped
-        .replaceAll('/', ' ')   // "CALACA/BAYAN" → "CALACA BAYAN"
-        .replaceAll('-', ' ')   // "7-11" → "7 11"
-        .replaceAll('.', ' ')   // "Brgy." → "Brgy "
+        .replaceAll('/', ' ') // "CALACA/BAYAN" → "CALACA BAYAN"
+        .replaceAll('-', ' ') // "7-11" → "7 11"
+        .replaceAll('.', ' ') // "Brgy." → "Brgy "
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim()
         .toUpperCase();
   }
 }
-

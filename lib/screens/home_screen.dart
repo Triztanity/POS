@@ -16,6 +16,7 @@ import '../services/nfc_reader_mode_service.dart';
 import '../services/sms_booking_alert_service.dart';
 import '../services/qr_validation_service.dart';
 import '../services/rtdb_occupancy_publisher_service.dart';
+import '../services/trip_record_live_service.dart';
 import '../local_storage.dart';
 import '../main.dart' show navigatorKey;
 import '../utils/dialogs.dart';
@@ -38,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late List<String> availableStops;
   final SmsBookingAlertService _smsAlertService = SmsBookingAlertService();
   StreamSubscription<Map<String, dynamic>>? _bookingAlertSub;
+  StreamSubscription<void>? _fareTableSub;
   List<Map<String, dynamic>> _activeBookingAlerts = [];
   String _activeScheduleTimeKey = '';
   String _activeRouteDirectionKey = '';
@@ -47,19 +49,14 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     AppState.instance.setCurrentScreen('home_screen');
     routeDirection = widget.routeDirection ?? 'north_to_south';
-    availableStops = List.from(fareTableStops);
+    _refreshAvailableStops(preserveSelection: false);
 
-    // Set from/to locations based on route direction
-    if (routeDirection == 'north_to_south') {
-      // North: Nasugbu → Batangas Terminal (start from Nasugbu, go up to Batangas)
-      fromLocation = availableStops.first; // Nasugbu
-      toLocation = availableStops.last; // Batangas Terminal
-    } else {
-      // South: Batangas Terminal → Nasugbu (start from Batangas, go down to Nasugbu)
-      fromLocation = availableStops
-          .last; // Batangas Terminal (but this is index 0 conceptually for south route)
-      toLocation = availableStops.first; // Nasugbu
-    }
+    _fareTableSub = FareTable.changes.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _refreshAvailableStops(preserveSelection: true);
+      });
+    });
 
     // Detect assigned bus for this device (BUS-001 / BUS-002)
     // Re-detect every launch; if successful it overwrites any stale cache
@@ -75,6 +72,10 @@ class _HomeScreenState extends State<HomeScreen> {
           busNumber: bus,
           routeDirection: routeDirection,
         );
+        unawaited(TripRecordLiveService().start(
+          busNumber: bus,
+          routeDirection: routeDirection,
+        ));
       }
     });
 
@@ -475,9 +476,45 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _bookingAlertSub?.cancel();
+    _fareTableSub?.cancel();
     // Stop RTDB publisher when home screen is disposed
     RtdbOccupancyPublisherService().stop();
     super.dispose();
+  }
+
+  void _refreshAvailableStops({required bool preserveSelection}) {
+    final nextStops = List<String>.from(fareTableStops);
+    if (nextStops.isEmpty) return;
+
+    final previousFrom = preserveSelection ? fromLocation : '';
+    final previousTo = preserveSelection ? toLocation : '';
+    final matchedFrom =
+        preserveSelection ? _findEquivalentStop(nextStops, previousFrom) : null;
+    final matchedTo =
+        preserveSelection ? _findEquivalentStop(nextStops, previousTo) : null;
+
+    availableStops = nextStops;
+    fromLocation = matchedFrom ??
+        (routeDirection == 'north_to_south'
+            ? availableStops.first
+            : availableStops.last);
+
+    final validToStops = getValidToStops();
+    toLocation = matchedTo != null && validToStops.contains(matchedTo)
+        ? matchedTo
+        : (validToStops.isNotEmpty ? validToStops.first : '');
+  }
+
+  String? _findEquivalentStop(List<String> stops, String selected) {
+    if (selected.isEmpty) return null;
+    final selectedPlace =
+        FareTable.normalizePlaceName(FareTable.extractPlaceName(selected));
+    for (final stop in stops) {
+      final stopPlace =
+          FareTable.normalizePlaceName(FareTable.extractPlaceName(stop));
+      if (stopPlace == selectedPlace) return stop;
+    }
+    return null;
   }
 
   String? _assignedBus;
@@ -730,7 +767,7 @@ class _HomeScreenState extends State<HomeScreen> {
             title: const Text("RECORDS"),
             onTap: () {
               Navigator.pop(context);
-              _showDispatcherAuthDialog(context);
+              _showConductorAuthDialog(context);
             },
           ),
         ],
@@ -1537,6 +1574,7 @@ class _HomeScreenState extends State<HomeScreen> {
           };
           try {
             await LocalStorage.saveWalkin(walkinRecord);
+            await TripRecordLiveService().publishNow(reason: 'walkin');
           } catch (e) {
             debugPrint('[HomeScreen] Failed saving walkin: $e');
           }
@@ -1620,9 +1658,21 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Dispatcher Authentication Dialog
-  void _showDispatcherAuthDialog(BuildContext context) {
-    // Reset NFC debounce so dispatcher card can be read immediately
+  /// Conductor authentication dialog for opening Records/Arrival Report.
+  void _showConductorAuthDialog(BuildContext context) {
+    final activeConductor = AppState.instance.conductor;
+    final expectedUid = activeConductor?['uid']?.toString().trim() ?? '';
+
+    if (activeConductor == null || expectedUid.isEmpty) {
+      unawaited(Dialogs.showMessage(
+        context,
+        'Conductor Required',
+        'No active conductor is registered for this trip.',
+      ));
+      return;
+    }
+
+    // Reset NFC debounce so conductor card can be read immediately
     NFCReaderModeService.instance.resetDebounce();
 
     final completer = Completer<void>();
@@ -1637,14 +1687,25 @@ class _HomeScreenState extends State<HomeScreen> {
         nfcSubscription =
             NFCReaderModeService.instance.onTag.listen((data) async {
           try {
-            String tappedUid = data['uid'] ?? '';
-            debugPrint('[DISPATCHER-AUTH] Tag tapped: $tappedUid');
+            final employee = Map<String, dynamic>.from(data as Map);
+            String tappedUid = employee['uid']?.toString() ?? '';
+            debugPrint('[CONDUCTOR-AUTH] Tag tapped: $tappedUid');
 
-            final employee = LocalStorage.getEmployee(tappedUid);
-            if (employee != null) {
+            if (employee['recognized'] != false) {
               debugPrint(
-                  '[DISPATCHER-AUTH] Card found: ${employee['name']} (role=${employee['role']})');
-              if (employee['role'] == 'dispatcher') {
+                  '[CONDUCTOR-AUTH] Card found: ${employee['name']} (role=${employee['role']})');
+              if (employee['role'] == 'conductor') {
+                final tappedEmployeeUid =
+                    employee['uid']?.toString().trim() ?? '';
+                if (tappedEmployeeUid != expectedUid) {
+                  await Dialogs.showMessage(
+                    context,
+                    'Not allowed',
+                    'Please tap the active conductor ID for this trip.',
+                  );
+                  return;
+                }
+
                 try {
                   nfcSubscription.cancel();
                 } catch (_) {}
@@ -1655,9 +1716,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Use global navigator key to avoid context issues
                 navigatorKey.currentState?.push(
                   MaterialPageRoute(
-                    builder: (_) => RecordsScreen(
-                        dispatcherInfo: employee,
-                        routeDirection: routeDirection),
+                    builder: (_) =>
+                        RecordsScreen(routeDirection: routeDirection),
                   ),
                 );
                 if (!completer.isCompleted) {
@@ -1665,15 +1725,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               } else {
                 Dialogs.showMessage(context, 'Not allowed',
-                    'Card is ${employee['role']}, not dispatcher');
+                    'Card is ${employee['role']}, not conductor');
               }
             } else {
-              debugPrint('[DISPATCHER-AUTH] Card $tappedUid NOT found');
+              debugPrint('[CONDUCTOR-AUTH] Card $tappedUid NOT found');
               Dialogs.showMessage(
-                  context, 'Not Found', 'Dispatcher card not recognized.');
+                  context, 'Not Found', 'Conductor card not recognized.');
             }
           } catch (e) {
-            debugPrint('[DISPATCHER-AUTH] Error: $e');
+            debugPrint('[CONDUCTOR-AUTH] Error: $e');
           }
         });
 
@@ -1693,14 +1753,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             title: Center(
               child: Text(
-                'DISPATCHER AUTHENTICATION',
+                'CONDUCTOR AUTHENTICATION',
                 textAlign: TextAlign.center,
                 style:
                     const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
               ),
             ),
-            content: const Text(
-              'Please tap your Dispatcher ID card.',
+            content: Text(
+              'Please tap the active conductor ID card for ${activeConductor['name'] ?? 'this trip'}.',
               textAlign: TextAlign.center,
             ),
             actions: [

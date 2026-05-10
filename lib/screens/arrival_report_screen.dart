@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:senraise_printer/senraise_printer.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import '../services/device_config_service.dart';
 import '../services/device_identifier_service.dart';
 import '../models/booking.dart';
 import '../local_storage.dart';
 import '../utils/fare_calculator.dart';
 import 'login_screen.dart';
-import 'records_screen.dart';
 import '../services/app_state.dart';
+import '../services/fare_table_cache_service.dart';
+import '../services/firebase_dispatch_service.dart';
 import '../services/rtdb_occupancy_publisher_service.dart';
+import '../services/trip_record_live_service.dart';
 import '../utils/dialogs.dart';
 
 class ArrivalReportScreen extends StatefulWidget {
@@ -166,136 +164,6 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
                       ),
                     ),
                   const SizedBox(height: 8),
-                  // Dispatcher rectangular panel (tappable)
-                  InkWell(
-                    onTap: () async {
-                      // Show options: view records or dispatch a new trip
-                      final choice = await showDialog<String?>(
-                        context: context,
-                        builder: (_) => SimpleDialog(
-                          title: const Text('Dispatcher Actions'),
-                          children: [
-                            SimpleDialogOption(
-                              onPressed: () =>
-                                  Navigator.of(context).pop('records'),
-                              child: const Text('View Records'),
-                            ),
-                            if (!isLocked)
-                              SimpleDialogOption(
-                                onPressed: () =>
-                                    Navigator.of(context).pop('dispatch'),
-                                child: const Text('Dispatch New Trip'),
-                              ),
-                            SimpleDialogOption(
-                              onPressed: () => Navigator.of(context).pop(null),
-                              child: const Text('Cancel'),
-                            ),
-                          ],
-                        ),
-                      );
-
-                      if (choice == 'records') {
-                        if (!mounted) return;
-                        final dispatcherInfo = {
-                          'name': widget.tripInfo['dispatcher'] ?? 'Unknown'
-                        };
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => RecordsScreen(
-                                  dispatcherInfo: dispatcherInfo)),
-                        );
-                      } else if (choice == 'dispatch') {
-                        if (isLocked) {
-                          if (mounted) {
-                            await Dialogs.showMessage(
-                              context,
-                              'Trip Locked',
-                              'Dispatch actions are disabled while cancellation lock is active.',
-                            );
-                          }
-                          return;
-                        }
-                        if (!mounted) return;
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (_) => AlertDialog(
-                            title: const Text('Confirm Dispatch'),
-                            content: const Text(
-                                'Finalize current trip and prepare for new trip? This will reset current trip counts.'),
-                            actions: [
-                              TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(false),
-                                  child: const Text('Cancel')),
-                              TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(true),
-                                  child: const Text('Confirm')),
-                            ],
-                          ),
-                        );
-                        if (confirm == true) {
-                          // Capture conductor uid before clearing
-                          final prevConductor = AppState.instance.conductor;
-                          final prevUid = prevConductor?['uid']?.toString();
-
-                          // Finalize current trip and start a fresh trip with vehicleNo
-                          final oldTrip = LocalStorage.getCurrentTripId();
-                          await LocalStorage.finalizeTrip(oldTrip);
-                          final assignedBus =
-                              await DeviceConfigService.getAssignedBus();
-                          await LocalStorage.startNewTrip(
-                              vehicleNo: assignedBus);
-                          if (assignedBus != null) {
-                            await LocalStorage.setCurrentVehicleNo(assignedBus);
-                          }
-
-                          // Clear in-memory bookings and remove persisted bookings for previous conductor
-                          try {
-                            BookingManager().clearBookings();
-                            if (prevUid != null && prevUid.isNotEmpty) {
-                              await LocalStorage.deleteBookingsForConductor(
-                                  prevUid);
-                            }
-                          } catch (_) {}
-
-                          // Clear current conductor/driver session
-                          await LocalStorage.clearSession();
-                          AppState.instance.clearSession();
-
-                          if (!mounted) return;
-
-                          if (!mounted) return;
-                          Navigator.pushAndRemoveUntil(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const LoginScreen()),
-                            (route) => false,
-                          );
-                        }
-                      }
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                          color: Colors.blue[50],
-                          borderRadius: BorderRadius.circular(8)),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Dispatcher',
-                              style: TextStyle(
-                                  fontSize: 12, color: Colors.black54)),
-                          Text(widget.tripInfo['dispatcher'] ?? 'Not assigned',
-                              style: const TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
 
                   // 2x2 Stats grid (compact)
                   SizedBox(
@@ -441,17 +309,6 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
                   ),
 
                   const SizedBox(height: 12),
-                  if (LocalStorage.isManualMode()) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      alignment: Alignment.center,
-                      child: const Text('--- SWITCHED TO MANUAL ---',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, color: Colors.red)),
-                    ),
-                  ],
-
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -606,8 +463,6 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
           ['DRIV NAME', widget.tripInfo['driver']!], [6, 4], [0, 2]);
       await _printer.printTableText(
           ['COND NAME', widget.tripInfo['conductor']!], [6, 4], [0, 2]);
-      await _printer.printTableText(
-          ['DISP NAME', widget.tripInfo['dispatcher']!], [6, 4], [0, 2]);
 
       // Count total tickets across all bookings
       final totalTickets = widget.bookings.length;
@@ -663,18 +518,16 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
               : (fromPlace.isNotEmpty ? fromPlace : toPlace);
 
           // Print human-friendly type label: Full (REGULAR), Student, Senior, PWD, Baggage
-          final typeLabel = (b.passengerType ?? 'REGULAR').toUpperCase() ==
-                  'REGULAR'
+          final passengerType = b.passengerType.toLowerCase();
+          final typeLabel = passengerType == 'regular'
               ? 'Full'
-              : (b.passengerType ?? '').toString().toLowerCase() == 'student'
+              : passengerType == 'student'
                   ? 'Student'
-                  : (b.passengerType ?? '').toString().toLowerCase() == 'senior'
+                  : passengerType == 'senior'
                       ? 'Senior'
-                      : (b.passengerType ?? '').toString().toLowerCase() ==
-                              'pwd'
+                      : passengerType == 'pwd'
                           ? 'PWD'
-                          : (b.passengerType ?? '').toString().toLowerCase() ==
-                                  'child'
+                          : passengerType == 'child'
                               ? 'Child'
                               : 'Full';
 
@@ -743,123 +596,36 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
       await _printer.printTableText(
           ['TOTAL REVENUE', totalRevenue.toStringAsFixed(2)], [6, 4], [0, 2]);
       await _printer.nextLine(3);
-      // If manual mode was enabled, print a centered marker for auditors at bottom
-      if (LocalStorage.isManualMode()) {
-        await _printer.setAlignment(1);
-        await _printer.setTextBold(true);
-        await _printer.printText('--- SWITCHED TO MANUAL ---\n');
-        await _printer.setTextBold(false);
-        await _printer.setAlignment(0);
-      }
 
       if (mounted) {
         await Dialogs.showMessage(
             context, 'Printed', 'Report printed successfully');
       }
 
-      // Build arrival report payload for Firestore
       try {
         final tripId = LocalStorage.getCurrentTripId();
-        final nowIso = DateTime.now().toIso8601String();
-
-        // Compute summary
-        final totalPassengers = widget.bookings.length;
-        final totalBookingSales = widget.bookings
-            .where((b) => b.passengerUid != null)
-            .fold(0.0, (s, b) => s + b.amount);
-        final totalCashSales = widget.bookings
-            .where((b) => b.passengerUid == null)
-            .fold(0.0, (s, b) => s + b.amount);
-        final totalAmount = totalBookingSales + totalCashSales;
-
-        final assignedBus = await DeviceConfigService.getAssignedBus();
         final ids = await DeviceIdentifierService.getDeviceIdentifiers();
-        final androidId = ids?['androidId'];
+        final androidId = ids?['androidId']?.toString();
+        final ticketMode = widget.scannedTickets.isNotEmpty
+            ? 'REGULAR TRIP WITH BOOKINGS'
+            : 'REGULAR TRIP';
 
-        // Use assignedBus if available, otherwise try to map from Android ID
-        final busNumber =
-            assignedBus ?? LocalStorage.getBusNumberFromAndroidId(androidId);
+        final tripRecordUpdated =
+            await TripRecordLiveService().publishCompleted(
+          reason: 'arrival',
+          finalBookings: widget.bookings,
+          inspections: widget.inspections,
+          ticketMode: ticketMode,
+          deviceAndroidId: androidId,
+        );
+        if (!tripRecordUpdated) {
+          throw Exception('Trip record update failed');
+        }
 
-        // Load and transform walk-ins and bookings to use ticket numbers
-        final walkinsRaw = LocalStorage.loadWalkinsForTrip(tripId);
-        final bookingsRaw = LocalStorage.loadBookingsForTrip(tripId);
-
-        // Transform walk-ins: replace 'id' with 'walkinId' and use W### format
-        int walkinCounter = 1;
-        final walkins = walkinsRaw.map((w) {
-          final transformed = Map<String, dynamic>.from(w);
-          transformed.remove('id'); // Remove old id field
-          transformed['walkinId'] =
-              'W${walkinCounter.toString().padLeft(3, '0')}';
-          walkinCounter++;
-          return transformed;
-        }).toList();
-
-        // Transform bookings: replace 'id' with 'bookingId' and use B### format
-        int bookingCounter = 1;
-        final bookings = bookingsRaw.map((b) {
-          final transformed = Map<String, dynamic>.from(b);
-          transformed.remove('id'); // Remove old id field
-          transformed['bookingId'] =
-              'B${bookingCounter.toString().padLeft(3, '0')}';
-          bookingCounter++;
-          return transformed;
-        }).toList();
-
-        final report = {
-          'tripId': tripId,
-          'reportedAt': nowIso,
-          'summary': {
-            'totalPassengers': totalPassengers,
-            'totalAmount': totalAmount,
-            'totalCashSales': totalCashSales,
-            'totalBookingSales': totalBookingSales,
-            'inspectionsCount': widget.inspections.length,
-            'bookingCount':
-                widget.bookings.where((b) => b.passengerUid != null).length,
-            'walkInCount':
-                widget.bookings.where((b) => b.passengerUid == null).length,
-            'totalTickets': widget.bookings.length,
-          },
-          'manualMode': LocalStorage.isManualMode(),
-          'walkins': walkins,
-          'bookings': bookings,
-          'conductor': {'name': widget.tripInfo['conductor'] ?? ''},
-          'driver': {'name': widget.tripInfo['driver'] ?? ''},
-          'dispatcher': {'name': widget.tripInfo['dispatcher'] ?? ''},
-          'vehicleNo': widget.tripInfo['vehicleNo'] ?? 'Unknown',
-          'busNumber': busNumber,
-          'route': widget.tripInfo['route'] ?? '',
-          'androidId': androidId,
-          // Let Cloud Function set server timestamps for createdAt/syncedAt if available.
-        };
-
-        // Check connectivity before attempting Firestore write
-        final conn = await Connectivity().checkConnectivity();
-        if (conn == ConnectivityResult.none) {
-          // Save to pending Hive box for later sync
-          final box = await Hive.openBox('arrival_reports_pending');
-          await box.put(tripId, report);
-          if (mounted) {
-            await Dialogs.showMessage(context, 'Offline',
-                'Report saved locally and will sync when online');
-          }
-        } else {
-          // Attempt Firestore upload
-          final col = FirebaseFirestore.instance.collection('arrivalReports');
-          await col.doc(report['tripId'] as String).set({
-            ...report,
-            'createdAt': FieldValue.serverTimestamp(),
-            'syncedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-
-          // Delete bookings from local storage after successful sync
-          await LocalStorage.deleteBookingsForTrip(tripId);
-
-          if (mounted) {
-            await Dialogs.showMessage(
-                context, 'Uploaded', 'Arrival report uploaded');
-          }
+        final scheduleUpdated =
+            await FirebaseDispatchService().markScheduleArrived(tripId: tripId);
+        if (!scheduleUpdated) {
+          throw Exception('Schedule arrived update failed');
         }
 
         // Publish final zero-count occupancy update to RTDB
@@ -867,6 +633,7 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
 
         // Finalize current trip locally to mark it complete
         await LocalStorage.finalizeTrip(tripId);
+        await LocalStorage.deleteBookingsForTrip(tripId);
 
         try {
           final prevConductor = AppState.instance.conductor;
@@ -880,11 +647,14 @@ class _ArrivalReportScreenState extends State<ArrivalReportScreen> {
         // Complete the trip globally: clear all lingering conductor/driver/trip sessions
         await LocalStorage.clearSession();
         AppState.instance.clearSession();
+
+        await FareTableCacheService().refreshIfStale(force: true);
       } catch (e) {
         if (mounted) {
-          await Dialogs.showMessage(
-              context, 'Upload Failed', 'Failed to upload report: $e');
+          await Dialogs.showMessage(context, 'Arrival Finalization Failed',
+              'Report printed, but final trip update failed: $e');
         }
+        return false;
       }
 
       return true;

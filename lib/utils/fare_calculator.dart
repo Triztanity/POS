@@ -1,24 +1,145 @@
 // fare_calculator.dart
 // Contains fare table and fare calculation logic for the POS app.
 
+import 'dart:async';
+
 import 'booking_station_mapping.dart';
 import 'route_validator.dart';
+
+class FareTableStationLocation {
+  final int routeOrder;
+  final int km;
+  final String name;
+  final double latitude;
+  final double longitude;
+
+  const FareTableStationLocation({
+    required this.routeOrder,
+    required this.km,
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+  });
+}
 
 class FareEntry {
   final String place;
   final int km;
   final int fare;
   final int discount;
+  final double? latitude;
+  final double? longitude;
 
   FareEntry(
       {required this.place,
       required this.km,
       required this.fare,
-      required this.discount});
+      required this.discount,
+      this.latitude,
+      this.longitude});
+
+  bool get hasCoordinates => latitude != null && longitude != null;
+
+  factory FareEntry.fromMap(Map<String, dynamic> map) {
+    final coordinateSource = map['coordinates'];
+    return FareEntry(
+      place: (map['place'] ?? '').toString().trim().toUpperCase(),
+      km: _parseInt(map['km']),
+      fare: _parseInt(map['fare']),
+      discount: _parseInt(map['discount']),
+      latitude: _parseCoordinate(
+        map,
+        coordinateSource,
+        directKeys: const ['latitude', 'lat'],
+        nestedKeys: const ['latitude', 'lat'],
+      ),
+      longitude: _parseCoordinate(
+        map,
+        coordinateSource,
+        directKeys: const ['longitude', 'lng', 'lon'],
+        nestedKeys: const ['longitude', 'lng', 'lon'],
+      ),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'place': place,
+      'km': km,
+      'fare': fare,
+      'discount': discount,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      if (hasCoordinates)
+        'coordinates': {
+          'latitude': latitude,
+          'longitude': longitude,
+        },
+    };
+  }
+
+  static int _parseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static double? _parseCoordinate(
+    Map<String, dynamic> map,
+    dynamic coordinateSource, {
+    required List<String> directKeys,
+    required List<String> nestedKeys,
+  }) {
+    for (final key in directKeys) {
+      final directValue = _parseDouble(map[key]);
+      if (directValue != null) return directValue;
+    }
+
+    if (coordinateSource == null) return null;
+
+    if (coordinateSource is Map) {
+      final nestedMap = Map<String, dynamic>.from(
+        coordinateSource.cast<String, dynamic>(),
+      );
+      for (final key in nestedKeys) {
+        final nestedValue = _parseDouble(nestedMap[key]);
+        if (nestedValue != null) return nestedValue;
+      }
+      return null;
+    }
+
+    for (final key in nestedKeys) {
+      try {
+        final value = switch (key) {
+          'latitude' || 'lat' => (coordinateSource as dynamic).latitude,
+          'longitude' ||
+          'lng' ||
+          'lon' =>
+            (coordinateSource as dynamic).longitude,
+          _ => null,
+        };
+        final parsed = _parseDouble(value);
+        if (parsed != null) return parsed;
+      } catch (_) {
+        // Ignore non-map coordinate payloads that do not expose lat/lng getters.
+      }
+    }
+
+    return null;
+  }
+
+  static double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
 }
 
 class FareTable {
-  static final List<FareEntry> entries = [
+  static final StreamController<void> _changesController =
+      StreamController<void>.broadcast();
+
+  static final List<FareEntry> _bundledEntries = [
     FareEntry(place: 'NASUGBU', km: 0, fare: 25, discount: 20),
     FareEntry(place: '', km: 1, fare: 25, discount: 20),
     FareEntry(place: 'LIAN', km: 2, fare: 25, discount: 20),
@@ -94,6 +215,120 @@ class FareTable {
     FareEntry(place: 'BOLBOK', km: 70, fare: 158, discount: 126),
     FareEntry(place: 'BATANGAS TERMINAL', km: 70, fare: 158, discount: 126),
   ];
+
+  static List<FareEntry> entries =
+      List<FareEntry>.unmodifiable(_bundledEntries);
+  static bool _usingBundledDefaults = true;
+
+  static bool get isUsingBundledDefaults => _usingBundledDefaults;
+
+  static Stream<void> get changes => _changesController.stream;
+
+  static void loadEntries(List<FareEntry> remoteEntries) {
+    final validationError = getValidationError(remoteEntries);
+    if (validationError != null) return;
+
+    final indexedEntries = remoteEntries.asMap().entries.toList();
+    indexedEntries.sort((a, b) {
+      final kmCompare = a.value.km.compareTo(b.value.km);
+      if (kmCompare != 0) return kmCompare;
+      return a.key.compareTo(b.key);
+    });
+
+    final sorted = indexedEntries.map((entry) => entry.value).toList();
+
+    entries = List<FareEntry>.unmodifiable(sorted);
+    _usingBundledDefaults = false;
+    RouteValidator.setDynamicNorthStations(placeNames);
+    _changesController.add(null);
+  }
+
+  static void resetToBundledDefaults() {
+    entries = List<FareEntry>.unmodifiable(_bundledEntries);
+    _usingBundledDefaults = true;
+    RouteValidator.setDynamicNorthStations(null);
+    _changesController.add(null);
+  }
+
+  static bool validateEntries(List<FareEntry> candidateEntries) {
+    return getValidationError(candidateEntries) == null;
+  }
+
+  static String? getValidationError(List<FareEntry> candidateEntries) {
+    if (candidateEntries.isEmpty) return 'no entries found';
+
+    final usableEntries = candidateEntries
+        .where((entry) => entry.km >= 0 && entry.fare > 0 && entry.discount > 0)
+        .toList();
+    if (usableEntries.isEmpty) {
+      return 'no usable entries with km >= 0 and positive fare/discount';
+    }
+
+    final ticketableCount =
+        usableEntries.where((e) => e.place.isNotEmpty).length;
+    if (ticketableCount < 2) {
+      return 'expected at least 2 ticketable stations, found $ticketableCount';
+    }
+
+    final maxKm =
+        usableEntries.map((e) => e.km).reduce((a, b) => a > b ? a : b);
+    final kmValues = usableEntries.map((e) => e.km).toSet();
+    for (var km = 0; km <= maxKm; km++) {
+      if (!kmValues.contains(km)) {
+        return 'missing fare row for km $km before max km $maxKm';
+      }
+    }
+
+    return null;
+  }
+
+  static int get stationCount => _uniqueStationEntries().length;
+
+  static bool get hasCompleteStationCoordinates {
+    final stations = _uniqueStationEntries();
+    return stations.isNotEmpty &&
+        stations.every((entry) => entry.hasCoordinates);
+  }
+
+  static List<FareTableStationLocation> get stationLocationsWithCoordinates {
+    final stations = _uniqueStationEntries();
+    final results = <FareTableStationLocation>[];
+    for (final stationEntry in stations.asMap().entries) {
+      final routeOrder = stationEntry.key;
+      final entry = stationEntry.value;
+      if (!entry.hasCoordinates) continue;
+      results.add(
+        FareTableStationLocation(
+          routeOrder: routeOrder,
+          km: entry.km,
+          name: normalizePlaceName(entry.place),
+          latitude: entry.latitude!,
+          longitude: entry.longitude!,
+        ),
+      );
+    }
+    return List<FareTableStationLocation>.unmodifiable(results);
+  }
+
+  static String? getStationNameByRouteOrder(int routeOrder) {
+    final stations = _uniqueStationEntries();
+    if (routeOrder < 0 || routeOrder >= stations.length) return null;
+    return normalizePlaceName(stations[routeOrder].place);
+  }
+
+  static List<FareEntry> _uniqueStationEntries() {
+    final seenPlaces = <String>{};
+    final results = <FareEntry>[];
+
+    for (final entry in entries) {
+      if (entry.place.isEmpty) continue;
+      final normalizedPlace = normalizePlaceName(entry.place);
+      if (!seenPlaces.add(normalizedPlace)) continue;
+      results.add(entry);
+    }
+
+    return results;
+  }
 
   static List<String> get placeNames => entries
       .where((e) => e.place.isNotEmpty)
@@ -206,15 +441,23 @@ class FareTable {
   /// Handles leading numbers, mid-string hyphens/dashes, and collapses multiple spaces
   /// Examples: "1. LIAN" -> "LIAN", "2|LIAN" -> "LIAN", "MAHAYAHAY 7-11" -> "MAHAYAHAY 711", "LIAN" -> "LIAN"
   static String normalizePlaceName(String place) {
-    return place
+    final normalized = place
         .replaceAll(RegExp(r'^[\d\.\|\s]+'),
             '') // Remove leading numbers, dots, pipes, spaces
         .replaceAll(
             '-', ' ') // Convert hyphens to spaces for token-based matching
+        .replaceAll('/', ' ')
+        .replaceAll('.', ' ')
         .replaceAll(
             RegExp(r'\s+'), ' ') // Collapse multiple spaces to single space
         .trim()
         .toUpperCase();
+
+    if (normalized.contains('PANTAY') || normalized.contains('PAG ASA')) {
+      return 'PANTAY';
+    }
+
+    return normalized;
   }
 
   static FareEntry? getEntryByKm(int km) {
@@ -319,65 +562,6 @@ class BookingFareCalculator {
     'BATANGAS TERMINAL',
   ];
 
-  static const List<int> bookingStationKms = [
-    0,
-    2,
-    3,
-    5,
-    6,
-    7,
-    9,
-    10,
-    11,
-    12,
-    14,
-    16,
-    18,
-    19,
-    20,
-    21,
-    23,
-    24,
-    25,
-    26,
-    27,
-    29,
-    30,
-    32,
-    33,
-    35,
-    37,
-    38,
-    39,
-    41,
-    42,
-    43,
-    44,
-    45,
-    46,
-    47,
-    48,
-    49,
-    50,
-    51,
-    52,
-    53,
-    54,
-    55,
-    56,
-    58,
-    60,
-    62,
-    64,
-    65,
-    66,
-    67,
-    69,
-    70,
-    70,
-    70
-  ];
-
   /// Calculate fare based on booking station names
   /// Returns the fare amount based on passenger type and distance
   static int calculateFare({
@@ -391,18 +575,13 @@ class BookingFareCalculator {
     final resolvedDestination =
         BookingStationMapping.resolveStation(destination);
 
-    // Find indices using fuzzy matching (handles formatting differences)
-    final originIndex = _findStationIndex(resolvedOrigin);
-    final destIndex = _findStationIndex(resolvedDestination);
+    final originEntry = FareTable.getEntryByPlace(resolvedOrigin);
+    final destEntry = FareTable.getEntryByPlace(resolvedDestination);
+    if (originEntry == null || destEntry == null) return 0;
 
-    if (originIndex == -1 || destIndex == -1) {
-      // Stations not found
-      return 0;
-    }
-
-    // Calculate KM distance using mapped km values, NOT array indices difference
-    final originKm = bookingStationKms[originIndex];
-    final destKm = bookingStationKms[destIndex];
+    // Calculate KM distance using fare table km values, NOT array index difference.
+    final originKm = originEntry.km;
+    final destKm = destEntry.km;
     final kmTraveled = (originKm - destKm).abs();
 
     // Get fare entry for this distance
@@ -415,47 +594,5 @@ class BookingFareCalculator {
         : fareEntry.discount;
 
     return farePerPassenger * quantity;
-  }
-
-  /// Find a station index with fuzzy matching to handle formatting differences
-  static int _findStationIndex(String stationName) {
-    final resolvedStation = BookingStationMapping.resolveStation(stationName);
-    final normalizedInput =
-        RouteValidator.normalizeStationName(resolvedStation);
-
-    // Try exact match first against booking station canonical list
-    for (int i = 0; i < bookingStations.length; i++) {
-      final normalizedStation =
-          RouteValidator.normalizeStationName(bookingStations[i]);
-      if (normalizedStation == normalizedInput) {
-        return i;
-      }
-    }
-
-    // Try exact match in RouteValidator master list as fallback
-    final directionStations = RouteValidator.northStations;
-    for (int i = 0; i < directionStations.length; i++) {
-      final normalizedStation =
-          RouteValidator.normalizeStationName(directionStations[i]);
-      if (normalizedStation == normalizedInput) {
-        return i;
-      }
-    }
-
-    // Try partial/substring match on normalized forms
-    final inputWords =
-        normalizedInput.split(' ').where((p) => p.isNotEmpty).toList();
-    for (int i = 0; i < bookingStations.length; i++) {
-      final normalizedStation =
-          RouteValidator.normalizeStationName(bookingStations[i]);
-      final allWordsMatch =
-          inputWords.every((word) => normalizedStation.contains(word));
-      if (allWordsMatch && inputWords.isNotEmpty) {
-        return i;
-      }
-    }
-
-    // No match found
-    return -1;
   }
 }

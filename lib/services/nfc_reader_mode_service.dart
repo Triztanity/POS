@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import '../local_storage.dart';
+import 'employee_account_service.dart';
 
 /// NFCReaderModeService bridges Android's native NFC ReaderMode to Flutter.
 /// ReaderMode is more reliable than polling and provides immediate tag detection
@@ -46,24 +46,24 @@ class NFCReaderModeService {
           if (event is Map) {
             final uid = event['uid']?.toString();
             if (uid != null && uid.isNotEmpty) {
-              _handleTagDetected(uid);
+              unawaited(_handleTagDetected(uid));
               return;
             }
             // maybe the map itself contains normalized fields
             final raw = event['raw']?.toString();
             if (raw != null && raw.isNotEmpty) {
-              _handleTagDetected(raw);
+              unawaited(_handleTagDetected(raw));
               return;
             }
           } else if (event is String) {
-            _handleTagDetected(event);
+            unawaited(_handleTagDetected(event));
             return;
           } else if (event is List<int>) {
             final hex = event
                 .map((b) => b.toRadixString(16).padLeft(2, '0'))
                 .join()
                 .toUpperCase();
-            _handleTagDetected(hex);
+            unawaited(_handleTagDetected(hex));
             return;
           }
         } catch (e) {
@@ -105,43 +105,46 @@ class NFCReaderModeService {
     _methodSub = null;
   }
 
-  void _handleTagDetected(String uid) {
-    debugPrint(
-        '[NFC-READER-MODE] tag detected: $uid, lastEmitted=$_lastEmittedUid');
-
-    // Debounce: avoid rapid re-reads of the same tag
-    if (_lastEmittedUid == uid) {
-      debugPrint('[NFC-READER-MODE] same uid, debounce skipping');
+  Future<void> _handleTagDetected(String uid) async {
+    final normalizedUid = EmployeeAccountService.normalizeUid(uid);
+    if (normalizedUid.isEmpty) {
+      debugPrint('[NFC-READER-MODE] ignored empty uid: $uid');
       return;
     }
 
-    // Debug: Show all employees in storage
-    final allEmployees = LocalStorage.getAllEmployees();
     debugPrint(
-        '[NFC-READER-MODE] Total employees in storage: ${allEmployees.length}');
-    for (final emp in allEmployees) {
-      debugPrint('[NFC-READER-MODE] Stored: ${emp['uid']} -> ${emp['name']}');
-    }
+        '[NFC-READER-MODE] tag detected: $normalizedUid, lastEmitted=$_lastEmittedUid');
 
-    final user = LocalStorage.getEmployee(uid);
+    // Debounce: avoid rapid re-reads of the same tag
+    if (_lastEmittedUid == normalizedUid) {
+      debugPrint('[NFC-READER-MODE] same uid, debounce skipping');
+      return;
+    }
+    _lastEmittedUid = normalizedUid;
+
+    final user = await EmployeeAccountService().resolveCard(uid);
     if (user != null) {
-      final role = user['role'].toString();
-      final name = user['name'].toString();
-      debugPrint('[NFC-READER-MODE] emit user name=$name role=$role uid=$uid');
+      final role = user['role']?.toString() ?? '';
+      final name = user['name']?.toString() ?? '';
+      final source =
+          user['resolvedFromFirebase'] == true ? 'firebase' : 'local';
+      debugPrint(
+          '[NFC-READER-MODE] emit user name=$name role=$role uid=$normalizedUid source=$source');
       debugPrint('[NFC-READER-MODE] user map: $user');
       _controller.add(user);
-      _lastEmittedUid = uid;
-
-      // Debounce for 2 seconds
-      Future.delayed(const Duration(seconds: 2), () {
-        if (_lastEmittedUid == uid) {
-          _lastEmittedUid = null;
-          debugPrint('[NFC-READER-MODE] debounce cleared for uid=$uid');
-        }
-      });
     } else {
-      debugPrint('[NFC-READER-MODE] uid $uid not found in LocalStorage');
+      final unknown = EmployeeAccountService().unknownCardPayload(uid);
+      debugPrint('[NFC-READER-MODE] uid $normalizedUid not recognized');
+      _controller.add(unknown);
     }
+
+    // Debounce for 2 seconds
+    Future.delayed(const Duration(seconds: 2), () {
+      if (_lastEmittedUid == normalizedUid) {
+        _lastEmittedUid = null;
+        debugPrint('[NFC-READER-MODE] debounce cleared for uid=$normalizedUid');
+      }
+    });
   }
 
   /// Clear debounce so the same UID can be read again immediately.

@@ -5,6 +5,8 @@
 library;
 
 class RouteValidator {
+  static List<String>? _dynamicNorthStations;
+
   /// Master station list ordered from Nasugbu → Batangas Terminal
   /// Based on the official booking system station list
   static const List<String> northStations = [
@@ -66,18 +68,30 @@ class RouteValidator {
     'BATANGAS TERMINAL',
   ];
 
+  static List<String> get activeNorthStations =>
+      _dynamicNorthStations ?? northStations;
+
+  static void setDynamicNorthStations(List<String>? stations) {
+    if (stations == null || stations.isEmpty) {
+      _dynamicNorthStations = null;
+      return;
+    }
+
+    _dynamicNorthStations = List<String>.unmodifiable(stations);
+  }
+
   /// Get the appropriate station list for the given route direction
   /// North (Nasugbu → Batangas): use northStations as-is
   /// South (Batangas → Nasugbu): use northStations reversed
   static List<String> getStationListForDirection(String direction) {
     final dir = direction.toLowerCase().trim();
     if (dir == 'north' || dir == 'north_to_south') {
-      return northStations;
+      return activeNorthStations;
     } else if (dir == 'south' || dir == 'south_to_north') {
-      return List.from(northStations.reversed);
+      return List.from(activeNorthStations.reversed);
     }
     // Default to north
-    return northStations;
+    return activeNorthStations;
   }
 
   /// Normalize a station name for comparison

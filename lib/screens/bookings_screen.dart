@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/booking.dart';
 import '../utils/fare_calculator.dart';
 import '../services/booking_status_orchestrator_service.dart';
+import '../services/trip_record_live_service.dart';
 import '../local_storage.dart';
 import '../utils/dialogs.dart';
 
@@ -344,6 +347,7 @@ class _BookingsScreenState extends State<BookingsScreen> {
 
       // Immediately refresh UI to reflect dropped-off status
       if (mounted) setState(() {});
+      unawaited(TripRecordLiveService().publishNow(reason: 'dropoff'));
 
       final result = await BookingStatusOrchestratorService().updateStatus(
         bookingId: booking.id,

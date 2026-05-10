@@ -12,6 +12,8 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
+
+import '../utils/fare_calculator.dart';
 import 'station_registry.dart';
 
 class BusCoordinate {
@@ -26,10 +28,30 @@ class BusCoordinate {
   });
 }
 
+class _GpsStationSourceEntry {
+  final int routeOrder;
+  final String name;
+  final double latitude;
+  final double longitude;
+
+  const _GpsStationSourceEntry({
+    required this.routeOrder,
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+  });
+}
+
 class RtdbGpsListenerService {
-  static final RtdbGpsListenerService _instance = RtdbGpsListenerService._internal();
+  static final RtdbGpsListenerService _instance =
+      RtdbGpsListenerService._internal();
   factory RtdbGpsListenerService() => _instance;
-  RtdbGpsListenerService._internal();
+  RtdbGpsListenerService._internal() {
+    _refreshStationSource();
+  }
+
+  final StreamController<int> _stationChangesController =
+      StreamController<int>.broadcast();
 
   // ─── Configuration ───
 
@@ -38,7 +60,10 @@ class RtdbGpsListenerService {
 
   // ─── State ───
   StreamSubscription<DatabaseEvent>? _rtdbSubscription;
+  StreamSubscription<void>? _fareTableSubscription;
   BusCoordinate? _lastCoordinate;
+  List<_GpsStationSourceEntry> _stationSource = const [];
+  String _stationSourceLabel = 'bundled';
 
   /// Current confirmed station (0-based routeOrder, north-to-south).
   int _currentStationOrder = 0;
@@ -53,12 +78,13 @@ class RtdbGpsListenerService {
   // ─── Public getters ───
   BusCoordinate? get lastCoordinate => _lastCoordinate;
   int get currentStationOrder => _currentStationOrder;
-  String get currentStationName =>
-      StationRegistry.byOrder(_currentStationOrder)?.name ?? 'Unknown';
+  String get currentStationName => _stationNameForOrder(_currentStationOrder);
+  Stream<int> get stationChanges => _stationChangesController.stream;
 
   bool get hasValidCoordinate {
     if (_lastCoordinate == null) return false;
-    final age = DateTime.now().difference(_lastCoordinate!.receivedAt).inSeconds;
+    final age =
+        DateTime.now().difference(_lastCoordinate!.receivedAt).inSeconds;
     return age <= _staleThresholdSeconds;
   }
 
@@ -83,11 +109,16 @@ class RtdbGpsListenerService {
   }) async {
     await stopListening();
     _routeDirection = routeDirection;
+    _refreshStationSource();
+    _fareTableSubscription = FareTable.changes.listen((_) {
+      _handleFareTableChanged();
+    });
 
     final rtdbId = busNumberToRtdbId(busNumber);
     final path = 'buses/$rtdbId';
 
-    debugPrint('[RtdbGps] Listening at RTDB path "$path" (bus: $busNumber → $rtdbId)');
+    debugPrint(
+        '[RtdbGps] Listening at RTDB path "$path" (bus: $busNumber → $rtdbId)');
 
     try {
       final db = FirebaseDatabase.instanceFor(
@@ -107,8 +138,12 @@ class RtdbGpsListenerService {
   Future<void> stopListening() async {
     await _rtdbSubscription?.cancel();
     _rtdbSubscription = null;
-    _hasInitialFix = false; // Reset so next startListening does a fresh global search
+    await _fareTableSubscription?.cancel();
+    _fareTableSubscription = null;
+    _hasInitialFix =
+        false; // Reset so next startListening does a fresh global search
     _currentStationOrder = 0;
+    _refreshStationSource();
     debugPrint('[RtdbGps] Stopped RTDB listener.');
   }
 
@@ -146,20 +181,30 @@ class RtdbGpsListenerService {
     }
   }
 
-  void _resolveNearestStation(double lat, double lng) {
+  void _resolveNearestStation(
+    double lat,
+    double lng, {
+    bool emitIfSameStation = false,
+    bool bypassDirectionGuard = false,
+  }) {
     // ── Always do a full global search across all 56 stations ──
     // The RTDB GPS tracker already smooths raw GPS noise. We trust each incoming
     // coordinate update and resolve immediately — no stability window needed.
-    int nearestOrder = 0;
+    final stations = _stationSource;
+    if (stations.isEmpty) {
+      debugPrint('[RtdbGps] No station source available for GPS resolution.');
+      return;
+    }
+
+    int nearestOrder = stations.first.routeOrder;
     double nearestDist = double.infinity;
 
-    for (int i = 0; i < StationRegistry.count; i++) {
-      final station = StationRegistry.stations[i];
+    for (final station in stations) {
       final dist = StationRegistry.haversineMetres(
           lat, lng, station.latitude, station.longitude);
       if (dist < nearestDist) {
         nearestDist = dist;
-        nearestOrder = i;
+        nearestOrder = station.routeOrder;
       }
     }
 
@@ -167,31 +212,42 @@ class RtdbGpsListenerService {
       // First fix: accept any station regardless of direction
       _currentStationOrder = nearestOrder;
       _hasInitialFix = true;
+      _stationChangesController.add(_currentStationOrder);
       debugPrint(
         '[RtdbGps] Initial station fix: '
-        '${StationRegistry.byOrder(nearestOrder)?.name} '
-        '(order: $nearestOrder, dist: ${nearestDist.toStringAsFixed(0)}m)',
+        '${_stationNameForOrder(nearestOrder)} '
+        '(order: $nearestOrder, dist: ${nearestDist.toStringAsFixed(0)}m, '
+        'source: $_stationSourceLabel)',
       );
       return;
     }
 
     if (nearestOrder == _currentStationOrder) {
-      // Already at the correct station — no-op
+      if (emitIfSameStation) {
+        _stationChangesController.add(_currentStationOrder);
+        debugPrint(
+          '[RtdbGps] Station source refreshed at '
+          '${_stationNameForOrder(nearestOrder)} '
+          '(source: $_stationSourceLabel)',
+        );
+      }
       return;
     }
 
     // Route-order enforcement: for forward routes, don't allow going backward.
     // (Only meaningful on real trips; skip for south_to_north where order reverses.)
     final isForward = _routeDirection != 'south_to_north';
-    if (isForward && nearestOrder < _currentStationOrder) {
+    if (!bypassDirectionGuard &&
+        isForward &&
+        nearestOrder < _currentStationOrder) {
       // GPS put us behind current station — could be a brief GPS bounce.
       // Accept only if it's a large jump (> 3 stations back) which may indicate
       // the bus truly reversed or we had a bad initial fix.
       if (_currentStationOrder - nearestOrder <= 3) {
         debugPrint(
           '[RtdbGps] Minor backward drift ignored '
-          '(${StationRegistry.byOrder(_currentStationOrder)?.name} → '
-          '${StationRegistry.byOrder(nearestOrder)?.name})',
+          '(${_stationNameForOrder(_currentStationOrder)} → '
+          '${_stationNameForOrder(nearestOrder)})',
         );
         return;
       }
@@ -199,11 +255,78 @@ class RtdbGpsListenerService {
 
     final prev = _currentStationOrder;
     _currentStationOrder = nearestOrder;
+    _stationChangesController.add(_currentStationOrder);
     debugPrint(
-      '[RtdbGps] Station → ${StationRegistry.byOrder(nearestOrder)?.name} '
-      '(was: ${StationRegistry.byOrder(prev)?.name}, '
-      'dist: ${nearestDist.toStringAsFixed(0)}m)',
+      '[RtdbGps] Station → ${_stationNameForOrder(nearestOrder)} '
+      '(was: ${_stationNameForOrder(prev)}, '
+      'dist: ${nearestDist.toStringAsFixed(0)}m, source: $_stationSourceLabel)',
     );
+  }
+
+  void _handleFareTableChanged() {
+    final previousSource = _stationSourceLabel;
+    final previousName = _stationNameForOrder(_currentStationOrder);
+    _refreshStationSource();
+
+    if (previousSource != _stationSourceLabel) {
+      debugPrint(
+        '[RtdbGps] Station source switched: $previousSource → $_stationSourceLabel',
+      );
+    }
+
+    final lastCoordinate = _lastCoordinate;
+    if (lastCoordinate != null) {
+      _resolveNearestStation(
+        lastCoordinate.latitude,
+        lastCoordinate.longitude,
+        emitIfSameStation: previousSource != _stationSourceLabel ||
+            previousName != _stationNameForOrder(_currentStationOrder),
+        bypassDirectionGuard: true,
+      );
+      return;
+    }
+
+    if (previousName != _stationNameForOrder(_currentStationOrder)) {
+      _stationChangesController.add(_currentStationOrder);
+    }
+  }
+
+  void _refreshStationSource() {
+    final fareTableStations = FareTable.stationLocationsWithCoordinates;
+    if (FareTable.hasCompleteStationCoordinates &&
+        fareTableStations.length == FareTable.stationCount) {
+      _stationSource = fareTableStations
+          .map(
+            (station) => _GpsStationSourceEntry(
+              routeOrder: station.routeOrder,
+              name: station.name,
+              latitude: station.latitude,
+              longitude: station.longitude,
+            ),
+          )
+          .toList(growable: false);
+      _stationSourceLabel = 'fare_table_entries';
+      return;
+    }
+
+    _stationSource = StationRegistry.stations
+        .map(
+          (station) => _GpsStationSourceEntry(
+            routeOrder: station.routeOrder,
+            name: station.name,
+            latitude: station.latitude,
+            longitude: station.longitude,
+          ),
+        )
+        .toList(growable: false);
+    _stationSourceLabel = 'bundled';
+  }
+
+  String _stationNameForOrder(int order) {
+    if (order >= 0 && order < _stationSource.length) {
+      return _stationSource[order].name;
+    }
+    return StationRegistry.byOrder(order)?.name ?? 'Unknown';
   }
 
   double? _parseDouble(dynamic v) {

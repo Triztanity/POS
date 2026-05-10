@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/booking.dart';
 import '../utils/fare_calculator.dart';
@@ -17,6 +19,7 @@ class _PassengersScreenState extends State<PassengersScreen>
   late List<String> stops;
   String? currentLocation;
   late BookingManager _bookingManager;
+  StreamSubscription<void>? _fareTableSub;
 
   @override
   void initState() {
@@ -27,15 +30,13 @@ class _PassengersScreenState extends State<PassengersScreen>
     // Load persisted bookings for the current conductor
     _loadBookings();
 
-    // Get unique places from FareTable with km values: ["0|NASUGBU", "2|LIAN", ...]
-    final forwardStops = FareTable.placeNamesWithKm;
-
-    // For north_to_south route: Nasugbu → Batangas (forward direction)
-    // For south_to_north route: Batangas → Nasugbu (reverse direction)
-    stops = widget.routeDirection == 'north_to_south'
-        ? List.from(forwardStops)
-        : List.from(forwardStops.reversed);
-    currentLocation = 'OVERVIEW';
+    _initializeStops(preserveLocation: false);
+    _fareTableSub = FareTable.changes.listen((_) {
+      if (!mounted) return;
+      setState(() {
+        _initializeStops(preserveLocation: true);
+      });
+    });
 
     // Schedule a refresh after frame to ensure data is loaded
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -46,8 +47,36 @@ class _PassengersScreenState extends State<PassengersScreen>
 
   @override
   void dispose() {
+    _fareTableSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _initializeStops({required bool preserveLocation}) {
+    final forwardStops = FareTable.placeNamesWithKm;
+    stops = widget.routeDirection == 'north_to_south'
+        ? List.from(forwardStops)
+        : List.from(forwardStops.reversed);
+
+    if (!preserveLocation || currentLocation == null) {
+      currentLocation = 'OVERVIEW';
+      return;
+    }
+
+    if (currentLocation == 'OVERVIEW') return;
+    currentLocation =
+        _findEquivalentStop(stops, currentLocation!) ?? 'OVERVIEW';
+  }
+
+  String? _findEquivalentStop(List<String> candidateStops, String selected) {
+    final selectedPlace =
+        FareTable.normalizePlaceName(FareTable.extractPlaceName(selected));
+    for (final stop in candidateStops) {
+      final stopPlace =
+          FareTable.normalizePlaceName(FareTable.extractPlaceName(stop));
+      if (stopPlace == selectedPlace) return stop;
+    }
+    return null;
   }
 
   @override

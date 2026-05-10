@@ -146,9 +146,11 @@ class _DispatchScreenState extends State<DispatchScreen> {
       scheduleToSave['busNumber'] = assignedBus;
       scheduleToSave['savedAt'] = DateTime.now().toIso8601String();
       await LocalStorage.saveAcceptedSchedule(scheduleToSave);
-      debugPrint('[Dispatch] Saved accepted schedule for offline use. tripId=$newTrip');
+      debugPrint(
+          '[Dispatch] Saved accepted schedule for offline use. tripId=$newTrip');
     } catch (e) {
-      debugPrint('[Dispatch] Warning: failed to save accepted schedule locally: $e');
+      debugPrint(
+          '[Dispatch] Warning: failed to save accepted schedule locally: $e');
     }
 
     try {
@@ -202,12 +204,12 @@ class _DispatchScreenState extends State<DispatchScreen> {
             NFCReaderModeService.instance.onTag.listen((data) async {
           try {
             debugPrint('[DISPATCH-CONFIRM] Tag detected: ${data['uid']}');
-            final tappedUid = data['uid']?.toString() ?? '';
-            final employee = LocalStorage.getEmployee(tappedUid);
+            final employee = Map<String, dynamic>.from(data as Map);
             debugPrint(
-                '[DISPATCH-CONFIRM] Employee: ${employee?['name']} (role=${employee?['role']})');
+                '[DISPATCH-CONFIRM] Employee: ${employee['name']} (role=${employee['role']})');
 
-            if (employee != null && (employee['role'] ?? '') == 'driver') {
+            if (employee['recognized'] != false &&
+                (employee['role'] ?? '') == 'driver') {
               debugPrint(
                   '[DISPATCH-CONFIRM] Valid driver, closing dialog and deploying');
               try {
@@ -226,7 +228,7 @@ class _DispatchScreenState extends State<DispatchScreen> {
             } else {
               if (mounted) {
                 Dialogs.showMessage(context, 'Invalid card',
-                    'Invalid card. Expected driver, got ${employee?['role'] ?? 'unknown'}',
+                    'Invalid card. Expected driver, got ${employee['role'] ?? 'unknown'}',
                     icon: Icons.error, iconColor: Colors.red);
               }
             }
@@ -498,8 +500,7 @@ class _DispatchScreenState extends State<DispatchScreen> {
                                       '',
                                 };
 
-                                await _showDriverConfirmDialog(
-                                    context, route);
+                                await _showDriverConfirmDialog(context, route);
                               },
                             ),
                           ),
