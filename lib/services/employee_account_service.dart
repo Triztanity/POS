@@ -8,13 +8,20 @@ class EmployeeAccountService {
   static final EmployeeAccountService _instance =
       EmployeeAccountService._internal();
 
+  static const _nfcEmployeeRoles = [
+    'conductor',
+    'driver',
+    'dispatcher',
+    'inspector',
+  ];
+
   factory EmployeeAccountService() => _instance;
 
   EmployeeAccountService._internal();
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<Map<String, dynamic>?> resolveCrewCard(String rawUid) async {
+  Future<Map<String, dynamic>?> resolveEmployeeCard(String rawUid) async {
     final normalizedUid = normalizeUid(rawUid);
     final employeeUidLower = employeeUidLowerFromRaw(rawUid);
     if (normalizedUid.isEmpty || employeeUidLower.isEmpty) {
@@ -29,12 +36,10 @@ class EmployeeAccountService {
     }
 
     try {
-      final snapshot = await _firestore
-          .collection('user_accounts')
-          .doc(employeeUidLower)
-          .get();
-      if (!snapshot.exists) {
-        debugPrint('[EmployeeAccount] No employee doc for $employeeUidLower');
+      final snapshot = await _findEmployeeSnapshot(employeeUidLower);
+      if (snapshot == null || !snapshot.exists) {
+        debugPrint(
+            '[EmployeeAccount] No employee account for $employeeUidLower');
         return null;
       }
 
@@ -50,9 +55,7 @@ class EmployeeAccountService {
           normalizedUid == fieldUid ||
           normalizedUid == docUid;
 
-      if (!enabled ||
-          (role != 'conductor' && role != 'driver') ||
-          !uidMatches) {
+      if (!enabled || !_nfcEmployeeRoles.contains(role) || !uidMatches) {
         debugPrint(
             '[EmployeeAccount] Rejected $employeeUidLower enabled=$enabled role=$role uidMatches=$uidMatches');
         return null;
@@ -67,20 +70,64 @@ class EmployeeAccountService {
     }
   }
 
-  Future<Map<String, dynamic>?> resolveCard(String rawUid) async {
-    final localEmployee = LocalStorage.getEmployee(rawUid);
-    final localRole = localEmployee?['role']?.toString().toLowerCase() ?? '';
-    if (localEmployee != null &&
-        localRole != 'conductor' &&
-        localRole != 'driver') {
-      return {
-        ...localEmployee,
-        'recognized': true,
-        'resolvedFromFirebase': false,
-      };
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _findEmployeeSnapshot(
+    String employeeUidLower,
+  ) async {
+    final collection = _firestore.collection('user_accounts');
+    final directSnapshot = await collection.doc(employeeUidLower).get();
+    if (directSnapshot.exists) return directSnapshot;
+
+    debugPrint(
+      '[EmployeeAccount] No UID-keyed doc for $employeeUidLower; querying UID fields',
+    );
+
+    final byLowerUid = await _queryEmployeeUidField(
+      field: 'employeeUidLower',
+      value: employeeUidLower,
+    );
+    if (byLowerUid != null) return byLowerUid;
+
+    final byDisplayUid = await _queryEmployeeUidField(
+      field: 'employeeUid',
+      value: employeeUidLower.toUpperCase(),
+    );
+    if (byDisplayUid != null) return byDisplayUid;
+
+    return _queryEmployeeUidField(
+      field: 'employeeUid',
+      value: normalizeUid(employeeUidLower),
+    );
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _queryEmployeeUidField({
+    required String field,
+    required String value,
+  }) async {
+    if (value.isEmpty) return null;
+
+    final collection = _firestore.collection('user_accounts');
+    for (final role in _nfcEmployeeRoles) {
+      final snapshot = await collection
+          .where(field, isEqualTo: value)
+          .where('enabled', isEqualTo: true)
+          .where('role', isEqualTo: role)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        final doc = snapshot.docs.first;
+        debugPrint(
+          '[EmployeeAccount] Found $field match for $value in user_accounts/${doc.id}',
+        );
+        return doc;
+      }
     }
 
-    final remoteEmployee = await resolveCrewCard(rawUid);
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> resolveCard(String rawUid) async {
+    final remoteEmployee = await resolveEmployeeCard(rawUid);
     if (remoteEmployee != null) {
       return {
         ...remoteEmployee,
@@ -89,13 +136,22 @@ class EmployeeAccountService {
       };
     }
 
+    final localEmployee = LocalStorage.getEmployee(rawUid);
     if (localEmployee == null) return null;
+    if (!_hasFirebaseSource(localEmployee)) return null;
 
     return {
       ...localEmployee,
       'recognized': true,
       'resolvedFromFirebase': false,
     };
+  }
+
+  bool _hasFirebaseSource(Map<String, dynamic> employee) {
+    return employee['firebaseSynced'] == true ||
+        employee['resolvedFromFirebase'] == true ||
+        (employee['firebaseDocId']?.toString().isNotEmpty ?? false) ||
+        (employee['authUid']?.toString().isNotEmpty ?? false);
   }
 
   Map<String, dynamic> unknownCardPayload(String rawUid) {

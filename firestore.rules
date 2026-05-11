@@ -64,6 +64,33 @@ service cloud.firestore {
       return roleId == 'admin' || roleId == 'dispatcher' || roleId == 'finance';
     }
 
+    function isEmployeeUidDocId(roleId) {
+      return roleId.matches('^([0-9a-f]{2}:){3,9}[0-9a-f]{2}$');
+    }
+
+    function hasEmployeeUidField() {
+      return ('employeeUidLower' in resource.data && resource.data.employeeUidLower is string)
+          || ('employeeUid' in resource.data && resource.data.employeeUid is string);
+    }
+
+    function isNfcEmployeeAccount() {
+      return resource.data.enabled == true
+          && (
+            resource.data.role == 'conductor'
+            || resource.data.role == 'driver'
+            || resource.data.role == 'dispatcher'
+            || resource.data.role == 'inspector'
+          )
+          && hasEmployeeUidField();
+    }
+
+    function isPosEmployeeLookupQuery() {
+      return isPosDevice()
+          && request.query.limit != null
+          && request.query.limit <= 1
+          && isNfcEmployeeAccount();
+    }
+
     function isPublicPortalLoginLookup() {
       return request.auth == null
           && request.query.limit != null
@@ -89,16 +116,14 @@ service cloud.firestore {
       allow get: if isKnownLoginRole(roleId)
                  || isAdminUser()
                  || (request.auth != null && request.auth.uid == roleId)
-                 || (
-                   isPosDevice()
-                   && resource.data.enabled == true
-                   && (resource.data.role == 'conductor' || resource.data.role == 'driver')
-                   && resource.data.employeeUidLower == roleId
-                 );
+                 || (isPosDevice() && isEmployeeUidDocId(roleId));
 
       // Pre-login username lookups need a narrowly-scoped list query against
-      // portal accounts; broader listing remains admin-only.
-      allow list: if isAdminUser() || isPublicPortalLoginLookup();
+      // portal accounts. POS NFC lookup may query one enabled employee account by
+      // UID fields because employee docs can be keyed by authUid.
+      allow list: if isAdminUser()
+          || isPublicPortalLoginLookup()
+          || isPosEmployeeLookupQuery();
 
       // Startup seed may create the initial role doc for the signed-in seed account.
       allow create: if (isKnownLoginRole(roleId) && (isAdminUser() || isSeedRoleOwner(roleId)))
@@ -119,8 +144,26 @@ service cloud.firestore {
 
     // BOOKINGS
     match /bookings/{bookingId} {
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
-      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if isPosDevice()
+                    || (request.auth != null && request.auth.uid == request.resource.data.userId);
+      allow read, update: if isPosDevice()
+                          || (request.auth != null && request.auth.uid == resource.data.userId);
+      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+
+    // NEW / WAITING BOOKINGS
+    match /bookings_new/{bookingId} {
+      allow create: if isPosDevice()
+                    || (request.auth != null && request.auth.uid == request.resource.data.userId);
+      allow read, update: if isPosDevice()
+                          || (request.auth != null && request.auth.uid == resource.data.userId);
+      allow delete: if false;
+    }
+
+    // ARCHIVED BOOKINGS
+    match /bookings_archive/{bookingId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if false;
     }
 
     // USERS (role definitions)

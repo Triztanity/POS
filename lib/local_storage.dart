@@ -2,16 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'services/app_state.dart';
 
-/// LocalStorage: simple Hive-based offline store for user records (UID to user map)
-/// Schema (box 'employees') stores values as `Map<String, dynamic>`:
-/// {
-///   'uid': 'ABC123',
-///   'name': 'Juan Dela Cruz',
-///   'role': 'conductor',
-///   'firebaseId': '...',
-///   'lastUpdated': 1234567890,
-///   'synced': true
-/// }
+/// LocalStorage: simple Hive-based offline cache for NFC employee records.
+/// Employee identities are resolved from Firebase and cached after successful lookup.
 class LocalStorage {
   /// Set the current trip status (e.g., 'pre-departure', 'departed', 'arrived') in session box
   static Future<void> setCurrentTripStatus(String status) async {
@@ -223,46 +215,7 @@ class LocalStorage {
       }
     }
 
-    // Seed local-only roles. Conductor and driver cards are resolved from
-    // Firebase user_accounts during login and cached after successful lookup.
-    final seeds = [
-      {'uid': '47:29:42:06', 'name': 'Dispatcher A', 'role': 'dispatcher'},
-      {'uid': '69:64:3F:06', 'name': 'Dispatcher B', 'role': 'dispatcher'},
-      {'uid': '05:91:41:06', 'name': 'Inspector', 'role': 'inspector'},
-    ];
-
-    for (final s in seeds) {
-      try {
-        final key = _normalizeUid(s['uid'] as String);
-        final existing = box.get(key);
-        if (existing == null) {
-          await upsertEmployee({
-            'uid': s['uid'],
-            'name': s['name'],
-            'role': s['role'],
-            'synced': false
-          });
-        } else {
-          try {
-            final existingMap =
-                Map<String, dynamic>.from(existing.cast<String, dynamic>());
-            final existingName = (existingMap['name'] ?? '').toString();
-            final existingRole = (existingMap['role'] ?? '').toString();
-            final seedName = (s['name'] ?? '').toString();
-            final seedRole = (s['role'] ?? '').toString();
-            // If seed provides a different name or role, update the stored record
-            if (existingName != seedName || existingRole != seedRole) {
-              final updated = Map<String, dynamic>.from(existingMap);
-              updated['name'] = seedName;
-              updated['role'] = seedRole;
-              // mark as not yet synced so changes can be propagated if applicable
-              updated['synced'] = false;
-              await upsertEmployee(updated);
-            }
-          } catch (_) {}
-        }
-      } catch (_) {}
-    }
+    await _purgeLocalOnlyEmployees(box);
 
     // Restore session conductor and driver into AppState if present
     try {
@@ -316,6 +269,36 @@ class LocalStorage {
     record['lastUpdated'] = DateTime.now().millisecondsSinceEpoch;
     record['synced'] = record['synced'] ?? false;
     await box.put(uid, record);
+  }
+
+  static Future<void> _purgeLocalOnlyEmployees(Box<Map> box) async {
+    final keysToDelete = <dynamic>[];
+    for (final key in box.keys) {
+      try {
+        final raw = box.get(key);
+        if (raw == null) continue;
+
+        final record = Map<String, dynamic>.from(raw.cast<String, dynamic>());
+        final hasFirebaseSource = record['firebaseSynced'] == true ||
+            record['resolvedFromFirebase'] == true ||
+            (record['firebaseDocId']?.toString().isNotEmpty ?? false) ||
+            (record['authUid']?.toString().isNotEmpty ?? false);
+
+        if (!hasFirebaseSource) {
+          keysToDelete.add(key);
+        }
+      } catch (_) {}
+    }
+
+    for (final key in keysToDelete) {
+      await box.delete(key);
+    }
+
+    if (keysToDelete.isNotEmpty) {
+      debugPrint(
+        '[LocalStorage] Removed ${keysToDelete.length} local-only employee cache records',
+      );
+    }
   }
 
   static Map<String, dynamic>? getEmployee(String uid) {

@@ -55,7 +55,7 @@ Entry point: `lib/main.dart`
 Startup sequence:
 
 1. `WidgetsFlutterBinding.ensureInitialized()`.
-2. `LocalStorage.init()` opens Hive boxes and seeds only local dispatcher/inspector NFC UIDs.
+2. `LocalStorage.init()` opens Hive boxes. NFC employee identities are resolved from Firebase and cached after successful lookup.
 3. Firebase initializes with `DefaultFirebaseOptions.currentPlatform`.
 4. Device bus assignment is cleared and auto-detected with `DeviceConfigService.autoDetectAndSaveAssignedBus()`.
 5. Senraise printer service version is checked best-effort.
@@ -98,7 +98,7 @@ Main facade: `lib/local_storage.dart`
 
 Hive boxes opened or used by the app:
 
-- `employees`: cached NFC employee records. Conductor/driver records come from Firebase `user_accounts/{employeeUidLower}` after successful lookup; local seeding is limited to dispatcher/inspector roles still handled locally.
+- `employees`: cached NFC employee records. Employee identities come from Firebase `user_accounts` after successful lookup by NFC UID fields; no employee card data is seeded locally.
 - `bookings`: persisted bookings by trip/conductor.
 - `session`: current conductor, driver, trip, route, last screen, manual mode, accepted schedule.
 - `inspections`: saved inspection records and sync state.
@@ -115,7 +115,7 @@ Hive boxes opened or used by the app:
 
 Important LocalStorage behavior:
 
-- `LocalStorage.init()` also normalizes NFC UID keys and seeds known local dispatcher/inspector employees.
+- `LocalStorage.init()` also normalizes cached NFC UID keys.
 - `clearSession()` clears conductor/driver/session, trips, bookings, scanned tickets, but does not clear `consumed_bookings`.
 - `startNewTrip()`, `finalizeTrip()`, `setCurrentTripId()`, `setCurrentTripStatus()`, `setCurrentVehicleNo()`, `setCurrentRoute()`, and accepted schedule helpers are the trip/session source of truth.
 - `saveBookingForTrip()`, `loadBookingsForTrip()`, `saveWalkin()`, `loadWalkinsForTrip()`, `saveScannedTicket()`, and `loadScannedTicketsForTrip()` feed passenger counts and final `trip_records` arrival data.
@@ -183,13 +183,13 @@ App-wide NFC behavior:
 - Signs in the POS device before reading Firestore schedules or resolving employee cards.
 - Listens to Firestore `schedules` for the assigned bus.
 - Requires schedule status `departed` before conductor/driver NFC login proceeds.
-- Scans conductor and driver NFC cards and requires Firebase-validated `user_accounts/{employeeUidLower}` records with `enabled == true`.
+- Scans conductor and driver NFC cards and requires Firebase-validated `user_accounts` records with matching UID fields and `enabled == true`.
 - Saves trip ID, vehicle number, route, conductor, and driver locally.
 - Navigates to `HomeScreen` with resolved route direction.
 
 `lib/services/employee_account_service.dart`
 
-- Looks up tapped conductor/driver cards in Firestore `user_accounts/{employeeUidLower}` using POS device auth.
+- Looks up tapped conductor/driver cards in Firestore `user_accounts` using POS device auth. UID-keyed docs are read directly; authUid-keyed docs are found through `employeeUidLower`/`employeeUid` field queries.
 - Normalizes NFC UIDs so `employeeUid`, `employeeUidLower`, and raw reader variants compare as the same card.
 - Accepts only enabled `conductor` and `driver` accounts, maps them into the existing local employee shape, and caches successful lookups in Hive.
 
@@ -322,7 +322,7 @@ App-wide NFC behavior:
 
 - Flutter side of native NFC ReaderMode.
 - Uses method channel `com.example.untitled/nfc` and event channel `com.example.untitled/nfc_tags`.
-- Resolves tapped conductor/driver cards through `EmployeeAccountService` first, then falls back to local cache for existing dispatcher/inspector and in-trip flows.
+- Resolves tapped employee cards through `EmployeeAccountService`, using Firebase first and only falling back to Firebase-sourced cache records.
 - Emits employee maps or an unknown-card payload to `onTag` stream.
 - Has 2-second same-UID debounce and `resetDebounce()`.
 
@@ -586,7 +586,7 @@ Firestore collections used by code/rules:
 - `inspections`: inspection reports.
 - `fare_table_entries`: active fare table rows. Each document has `km`, `fare`, `discount`, `place`, `isActive`, and `createdAt`, and may also include station coordinates. Rows with blank `place` are valid and required for distance fare lookup, but are not ticketable stations.
 - `users`: Firebase role documents for dispatcher/POS auth.
-- `user_accounts`: role/login and employee account documents. Conductor/driver NFC login reads enabled employee docs keyed by `employeeUidLower`.
+- `user_accounts`: role/login and employee account documents. NFC employee lookup reads enabled employee docs either keyed by `employeeUidLower` or keyed by Firebase `authUid` with matching `employeeUidLower`/`employeeUid` fields.
 
 Realtime Database paths:
 
@@ -599,7 +599,7 @@ Firestore security rules:
 - `arrivalReports` is retained for historical compatibility; current POS final-arrival writes go to `trip_records`.
 - `bookings_archive`, `tripDetails`, `inspections`, `trip_records`, and POS schedule updates rely on POS role.
 - `trip_records` allows POS create/update only when payload `tripId` and `scheduleTripId` match the document ID; signed-in users can read.
-- `user_accounts` allows POS direct `get` only for enabled conductor/driver employee docs whose `employeeUidLower` matches the document ID; POS cannot list or write accounts.
+- `user_accounts` allows POS direct `get` for NFC UID-shaped employee doc IDs and limited one-result NFC employee lookup queries; POS cannot write accounts.
 - `bookings` and `bookings_new` allow public reads and authenticated owner/POS writes.
 - `fare_table_entries` allows authenticated reads and admin writes, including optional coordinate fields for station-location updates.
 
@@ -618,7 +618,7 @@ Firestore security rules:
 2. It gets assigned bus from `DeviceConfigService`.
 3. It listens to Firestore `schedules` where bus matches and status is `pre-departure` or `departed`.
 4. Login is allowed only when selected schedule status is `departed`.
-5. Conductor and driver NFC cards must resolve to enabled Firebase `user_accounts/{employeeUidLower}` docs with matching `employeeUid`/`employeeUidLower` and role `conductor` or `driver`.
+5. Conductor and driver NFC cards must resolve to enabled Firebase `user_accounts` docs with matching `employeeUid`/`employeeUidLower` and role `conductor` or `driver`.
 6. Retrieved employee details are cached locally and saved into session state.
 7. Schedule trip/route is saved locally and `HomeScreen` opens.
 
