@@ -74,8 +74,8 @@ class FirebaseDispatchService {
     }
   }
 
-  /// Mark an in-progress trip as cancelled from POS (emergency alert path).
-  /// Writes only `cancelledAt` (server timestamp) on matched schedule doc.
+  /// Mark an active trip as cancelled from POS (emergency alert path).
+  /// Writes the terminal cancelled status and timestamp on the matched schedule.
   /// Returns true if a schedule was updated; false if no active/eligible schedule.
   Future<bool> sendCancelTripSignal({String? tripId}) async {
     try {
@@ -87,39 +87,53 @@ class FirebaseDispatchService {
         return false;
       }
 
-      tripId ??= LocalStorage.getCurrentTripId();
-      if (tripId.isEmpty) {
+      final resolvedTripId = (tripId ?? LocalStorage.getCurrentTripId()).trim();
+      if (resolvedTripId.isEmpty) {
         print('⚠️ No current tripId set in local storage.');
         return false;
       }
 
-      final query = await _firestore
-          .collection('schedules')
-          .where('tripId', isEqualTo: tripId)
-          .limit(1)
-          .get();
+      var docRef = _firestore.collection('schedules').doc(resolvedTripId);
+      var snapshot = await docRef.get();
 
-      if (query.docs.isEmpty) {
-        print('⚠️ No schedule found for tripId $tripId');
-        return false;
+      if (!snapshot.exists) {
+        final query = await _firestore
+            .collection('schedules')
+            .where('tripId', isEqualTo: resolvedTripId)
+            .limit(1)
+            .get();
+        if (query.docs.isEmpty) {
+          print('⚠️ No schedule found for tripId $resolvedTripId');
+          return false;
+        }
+        snapshot = query.docs.first;
+        docRef = snapshot.reference;
       }
 
-      final doc = query.docs.first;
-      final data = doc.data();
+      final data = snapshot.data() ?? <String, dynamic>{};
       final status = (data['status'] ?? '').toString().toLowerCase();
 
+      if (status == 'cancelled' || status == 'canceled') {
+        print('✅ Schedule already cancelled for tripId=$resolvedTripId');
+        return true;
+      }
+
       // Only send cancel signal for already started trips.
-      if (status != 'departed' && status != 'in-progress') {
+      if (status != 'departed' &&
+          status != 'dispatched' &&
+          status != 'in-progress') {
         print(
-            '⚠️ Schedule is not in-progress/departed (status=$status); skip cancel signal.');
+            '⚠️ Schedule is not active/departed (status=$status); skip cancel signal.');
         return false;
       }
 
-      await doc.reference.update({
+      await docRef.update({
+        'status': 'cancelled',
         'cancelledAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ Cancel trip signal set for schedule tripId=$tripId');
+      print('✅ Schedule cancelled for tripId=$resolvedTripId');
       return true;
     } catch (e) {
       print('❌ Failed to send cancel trip signal: $e');
@@ -169,8 +183,8 @@ class FirebaseDispatchService {
       }
       if (status == 'cancelled' || status == 'canceled') {
         print(
-            '⚠️ Schedule is cancelled (status=$status); skip arrived update.');
-        return false;
+            '✅ Schedule already in terminal $status state for tripId=$resolvedTripId; skip arrived update.');
+        return true;
       }
 
       if (status != 'departed' &&

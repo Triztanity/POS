@@ -2,32 +2,31 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper: check user role using either UID-keyed or email-keyed /users docs
-    function hasRole(role) {
-      return request.auth != null && (
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).exists() &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role)
-        || (request.auth.token.email != null &&
-          get(/databases/$(database)/documents/users/$(request.auth.token.email)).exists() &&
-          get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == role)
-      );
-    }
+ // Helper: check user role using either UID-keyed or email-keyed /users docs
+function hasRole(role) {
+  return request.auth != null && (
+    (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role)
+    || (request.auth.token.email != null &&
+      exists(/databases/$(database)/documents/users/$(request.auth.token.email)) &&
+      get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == role)
+  );
+}
 
-    // Helper: check roles stored in /user_accounts, supporting both
-    // fixed role docs (user_accounts/admin) and uid-keyed employee docs.
-    function hasUserAccountRole(role) {
-      return request.auth != null && (
-        (get(/databases/$(database)/documents/user_accounts/$(request.auth.uid)).exists() &&
-          get(/databases/$(database)/documents/user_accounts/$(request.auth.uid)).data.role == role)
-        || (get(/databases/$(database)/documents/user_accounts/$(role)).exists() &&
-          get(/databases/$(database)/documents/user_accounts/$(role)).data.role == role &&
-          (
-            get(/databases/$(database)/documents/user_accounts/$(role)).data.authUid == request.auth.uid
-            || (request.auth.token.email != null &&
-              get(/databases/$(database)/documents/user_accounts/$(role)).data.email == request.auth.token.email)
-          ))
-      );
-    }
+// Helper: check roles stored in /user_accounts
+function hasUserAccountRole(role) {
+  return request.auth != null && (
+    (exists(/databases/$(database)/documents/user_accounts/$(request.auth.uid)) &&
+      get(/databases/$(database)/documents/user_accounts/$(request.auth.uid)).data.role == role)
+    || (exists(/databases/$(database)/documents/user_accounts/$(role)) &&
+      get(/databases/$(database)/documents/user_accounts/$(role)).data.role == role &&
+      (
+        get(/databases/$(database)/documents/user_accounts/$(role)).data.authUid == request.auth.uid
+        || (request.auth.token.email != null &&
+          get(/databases/$(database)/documents/user_accounts/$(role)).data.email == request.auth.token.email)
+      ))
+  );
+}
 
     function isTrustedExampleEmail() {
       return request.auth != null
@@ -41,6 +40,23 @@ service cloud.firestore {
             hasRole('admin')
             || hasUserAccountRole('admin')
             || request.auth.token.email == 'admin@example.com'
+          );
+    }
+
+    function isFinanceUser() {
+      return request.auth != null
+          && (
+            hasRole('finance')
+            || hasUserAccountRole('finance')
+            || request.auth.token.email == 'finance@example.com'
+          );
+    }
+
+    function isFinanceOrAdminUser() {
+      return request.auth != null
+          && (
+            isFinanceUser()
+            || isAdminUser()
           );
     }
 
@@ -63,7 +79,7 @@ service cloud.firestore {
     function isKnownLoginRole(roleId) {
       return roleId == 'admin' || roleId == 'dispatcher' || roleId == 'finance';
     }
-
+ 		
     function isEmployeeUidDocId(roleId) {
       return roleId.matches('^([0-9a-f]{2}:){3,9}[0-9a-f]{2}$');
     }
@@ -124,7 +140,6 @@ service cloud.firestore {
       allow list: if isAdminUser()
           || isPublicPortalLoginLookup()
           || isPosEmployeeLookupQuery();
-
       // Startup seed may create the initial role doc for the signed-in seed account.
       allow create: if (isKnownLoginRole(roleId) && (isAdminUser() || isSeedRoleOwner(roleId)))
                     || (isAdminUser());
@@ -142,7 +157,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // BOOKINGS
+     // BOOKINGS
     match /bookings/{bookingId} {
       allow create: if isPosDevice()
                     || (request.auth != null && request.auth.uid == request.resource.data.userId);
@@ -228,7 +243,7 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','dispatchTime','driverName','conductorName','updatedAt']) &&
           !(resource.data.status == 'arrived' && request.resource.data.status != resource.data.status)
         )
-
+					
         // POS arrival action: active/departed schedule -> arrived.
         || (
           isPosDevice() &&
@@ -237,7 +252,6 @@ service cloud.firestore {
           request.resource.data.status == 'arrived' &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','arrivedAt','updatedAt'])
         )
-
         // Minimal cancellation action from the schedule dialog.
         || (
           isDispatcherOrTrusted() &&
@@ -269,7 +283,7 @@ service cloud.firestore {
               && resource.data.status == 'pre-departure';
     }
 
-    // LIVE / FINAL TRIP RECORDS
+     // LIVE / FINAL TRIP RECORDS
     match /trip_records/{tripId} {
       allow read: if request.auth != null;
       allow create, update: if isPosDevice()
@@ -277,10 +291,10 @@ service cloud.firestore {
         && request.resource.data.scheduleTripId == tripId;
       allow delete: if false;
     }
-
     // TRIP DETAILS
     match /tripDetails/{detailId} {
-      allow create: if request.auth != null && (hasRole('pos') || (request.auth.token.email != null && request.auth.token.email.matches('^.+@example\\.com$')));
+      allow create: if request.auth != null && (hasRole('pos') || (request.auth.token.email != null 
+      && request.auth.token.email.matches('^.+@example\\.com$')));
       allow read: if request.auth != null;
       allow update, delete: if false;
     }
@@ -310,6 +324,13 @@ service cloud.firestore {
         match /fare_table_entries/{entryId} {
             allow read: if request.auth != null;
             allow create, update, delete: if isAdminUser();
+        }
+
+        // TRIP REPORT REMITTANCES
+        match /trip_report_remittances/{remittanceId} {
+          allow read: if request.auth != null;
+          allow create, update: if isFinanceOrAdminUser();
+          allow delete: if false;
         }
 
         // BUS FLEET

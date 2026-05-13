@@ -176,143 +176,146 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: ElevatedButton(
                     onPressed: () async {
                       if (_logoutBlockedByAcceptedSchedule) {
-                        await Dialogs.showMessage(
-                            context, 'Blocked', 'Logout disabled while active schedule is accepted.');
+                        await Dialogs.showMessage(context, 'Blocked',
+                            'Logout disabled while active schedule is accepted.');
                         return;
                       }
 
                       // Require NFC confirmation: only the same conductor may log out
-                    final current = AppState.instance.conductor;
-                    if (current == null) {
-                      await Dialogs.showMessage(context, 'Error',
-                          'No conductor is currently logged in');
-                      return;
-                    }
-
-                    // Reset NFC debounce to prevent ignored taps
-                    NFCReaderModeService.instance.resetDebounce();
-
-                    // Show a modal that immediately starts polling the reader
-                    final bool? confirmed = await showDialog<bool>(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (ctx) {
-                        String status =
-                            'Tap your ID card on the reader to confirm logout';
-                        bool loading = true;
-                        bool started = false;
-
-                        String norm(String? u) => (u ?? '')
-                            .replaceAll(RegExp(r'[^A-Fa-f0-9]'), '')
-                            .toUpperCase();
-                        final expectedUid = norm(current['uid']?.toString());
-
-                        return StatefulBuilder(
-                          builder: (ctx2, setState) {
-                            if (!started) {
-                              started = true;
-                              // Subscribe to ReaderMode events for the duration of the dialog
-                              StreamSubscription<Map<String, dynamic>>? sub;
-                              sub = NFCReaderModeService.instance.onTag
-                                  .listen((user) async {
-                                final actualUid = norm(user['uid']?.toString());
-                                if (actualUid.isEmpty) {
-                                  setState(() {
-                                    status = 'No card detected. Waiting...';
-                                    loading = false;
-                                  });
-                                  return;
-                                }
-
-                                if (actualUid != expectedUid) {
-                                  setState(() {
-                                    status = 'Card does not match. Try again.';
-                                    loading = false;
-                                  });
-                                  return;
-                                }
-
-                                // Matched: cancel subscription and close dialog with success
-                                try {
-                                  await sub?.cancel();
-                                } catch (_) {}
-                                if (Navigator.canPop(ctx2))
-                                  Navigator.pop(ctx2, true);
-                              });
-                            }
-
-                            return AlertDialog(
-                              title: const Text('Confirm Logout'),
-                              content: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(status),
-                                  const SizedBox(height: 12),
-                                  if (loading)
-                                    const CircularProgressIndicator(),
-                                ],
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () {
-                                    Navigator.pop(ctx2, false);
-                                  },
-                                  child: const Text('Cancel'),
-                                ),
-                              ],
-                            );
-                          },
-                        );
-                      },
-                    );
-
-                    if (confirmed != true) return;
-
-                    // UID matched and dialog closed: proceed to clear persisted and in-memory bookings and session
-                    try {
-                      final uid = current['uid']?.toString();
-                      if (uid != null && uid.isNotEmpty) {
-                        await LocalStorage.deleteBookingsForConductor(uid);
+                      final current = AppState.instance.conductor;
+                      if (current == null) {
+                        await Dialogs.showMessage(context, 'Error',
+                            'No conductor is currently logged in');
+                        return;
                       }
-                    } catch (_) {}
-                    // Clear in-memory bookings
-                    try {
-                      BookingManager().clearBookings();
-                    } catch (_) {}
 
-                    // Clear ONLY conductor session to keep driver locked to schedule
-                    AppState.instance.setConductor(null);
-                    AppState.instance.setTripCancelledLocked(false);
-                    await LocalStorage.clearCurrentConductor();
-                    await LocalStorage
-                        .clearLastScreen(); // Clear navigation state on logout
-
-                    // Reset ReaderMode debounce and ensure reader mode is active
-                    try {
+                      // Reset NFC debounce to prevent ignored taps
                       NFCReaderModeService.instance.resetDebounce();
-                      await NFCReaderModeService.instance.start();
-                      // small delay to let native reader initialize
-                      await Future.delayed(const Duration(milliseconds: 250));
-                    } catch (_) {}
 
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green[700],
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                      // Show a modal that immediately starts polling the reader
+                      final bool? confirmed = await showDialog<bool>(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (ctx) {
+                          String status =
+                              'Tap your ID card on the reader to confirm logout';
+                          bool loading = true;
+                          bool started = false;
+
+                          String norm(String? u) => (u ?? '')
+                              .replaceAll(RegExp(r'[^A-Fa-f0-9]'), '')
+                              .toUpperCase();
+                          final expectedUid = norm(current['uid']?.toString());
+
+                          return StatefulBuilder(
+                            builder: (ctx2, setState) {
+                              if (!started) {
+                                started = true;
+                                // Subscribe to ReaderMode events for the duration of the dialog
+                                StreamSubscription<Map<String, dynamic>>? sub;
+                                sub = NFCReaderModeService.instance.onTag
+                                    .listen((user) async {
+                                  final actualUid =
+                                      norm(user['uid']?.toString());
+                                  if (actualUid.isEmpty) {
+                                    setState(() {
+                                      status = 'No card detected. Waiting...';
+                                      loading = false;
+                                    });
+                                    return;
+                                  }
+
+                                  if (actualUid != expectedUid) {
+                                    setState(() {
+                                      status =
+                                          'Card does not match. Try again.';
+                                      loading = false;
+                                    });
+                                    return;
+                                  }
+
+                                  // Matched: cancel subscription and close dialog with success
+                                  try {
+                                    await sub?.cancel();
+                                  } catch (_) {}
+                                  if (Navigator.canPop(ctx2)) {
+                                    Navigator.pop(ctx2, true);
+                                  }
+                                });
+                              }
+
+                              return AlertDialog(
+                                title: const Text('Confirm Logout'),
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(status),
+                                    const SizedBox(height: 12),
+                                    if (loading)
+                                      const CircularProgressIndicator(),
+                                  ],
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.pop(ctx2, false);
+                                    },
+                                    child: const Text('Cancel'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        },
+                      );
+
+                      if (confirmed != true) return;
+
+                      // UID matched and dialog closed: proceed to clear persisted and in-memory bookings and session
+                      try {
+                        final uid = current['uid']?.toString();
+                        if (uid != null && uid.isNotEmpty) {
+                          await LocalStorage.deleteBookingsForConductor(uid);
+                        }
+                      } catch (_) {}
+                      // Clear in-memory bookings
+                      try {
+                        BookingManager().clearBookings();
+                      } catch (_) {}
+
+                      // Clear ONLY conductor session to keep driver locked to schedule
+                      AppState.instance.setConductor(null);
+                      AppState.instance.setTripCancelledLocked(false);
+                      await LocalStorage.clearCurrentConductor();
+                      await LocalStorage
+                          .clearLastScreen(); // Clear navigation state on logout
+
+                      // Reset ReaderMode debounce and ensure reader mode is active
+                      try {
+                        NFCReaderModeService.instance.resetDebounce();
+                        await NFCReaderModeService.instance.start();
+                        // small delay to let native reader initialize
+                        await Future.delayed(const Duration(milliseconds: 250));
+                      } catch (_) {}
+
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                        (route) => false,
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green[700],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text(
+                      "LOG OUT",
+                      style: TextStyle(color: Colors.white, fontSize: 16),
                     ),
                   ),
-                  child: const Text(
-                    "LOG OUT",
-                    style: TextStyle(color: Colors.white, fontSize: 16),
-                  ),
                 ),
-              ),
               const SizedBox(height: 12),
 
               // Emergency cancel trip trigger (POS can request dispatcher review)
@@ -532,7 +535,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         await Dialogs.showMessage(
           context,
           'Cannot cancel trip',
-          'No active trip in progress for cancellation.',
+          'No active schedule was found for this trip, or it has not started yet.',
         );
         return;
       }
@@ -543,7 +546,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await Dialogs.showMessage(
         context,
         'Cancel Trip Alert Sent',
-        'Emergency cancellation signal recorded (cancelledAt set). This session is now locked to Menu > Records > Arrival Report only.',
+        'Schedule marked cancelled. This session is now locked to Menu > Records > Arrival Report only.',
       );
 
       if (mounted) {
@@ -711,8 +714,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // normalizedUid is hex uppercase without separators, e.g. EB4D4506
     final pairs = <String>[];
     for (var i = 0; i < normalizedUid.length; i += 2) {
-      if (i + 2 <= normalizedUid.length)
+      if (i + 2 <= normalizedUid.length) {
         pairs.add(normalizedUid.substring(i, i + 2));
+      }
     }
     if (pairs.isEmpty) return '****';
     // mask all except last pair
